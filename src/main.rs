@@ -73,7 +73,7 @@ struct UiMsg {
 
 const WIDTH: f64 = 340.0;
 const TICK: Duration = Duration::from_secs(5);
-const STATS_SAVE: Duration = Duration::from_secs(60);
+const STATS_SAVE: Duration = Duration::from_secs(15);
 const LAMPARRAY_CHECK: Duration = Duration::from_secs(60);
 const FIRST_UPDATE_CHECK: Duration = Duration::from_secs(60);
 const UPDATE_INTERVAL: Duration = Duration::from_secs(24 * 3600);
@@ -146,10 +146,12 @@ fn ui_state(cfg: &Config, status: Option<&Status>, lamparray: bool, stats: &clic
         "low_alert": cfg.low_battery_alert,
         "pin": cfg.always_show_in_tray,
         "auto_update": cfg.auto_update,
+        "tray_icon": cfg.tray_icon,
         "update": {
-            "current": updater::build_short(),
+            "current": updater::VERSION,
+            "build": updater::build_short(),
             "status": upd.status,
-            "latest": upd.latest.as_ref().map(|a| a.sha.chars().take(7).collect::<String>()),
+            "latest": upd.latest.as_ref().map(|a| a.version.clone()),
             "error": upd.error,
         },
     })
@@ -165,6 +167,16 @@ fn stats_state(cfg: &Config, stats: &clicks::Stats) -> String {
         "accent": platform::accent_color(),
     })
     .to_string()
+}
+
+/// Tray icon image for the current style.
+fn tray_image(cfg: &Config, status: Option<&Status>, light_taskbar: bool) -> Option<Icon> {
+    match cfg.tray_icon {
+        config::TrayIcon::App => Icon::from_rgba(include_bytes!("../assets/app64.rgba").to_vec(), 64, 64).ok(),
+        config::TrayIcon::Battery => {
+            Icon::from_rgba(icon::render(status, light_taskbar), icon::ICON_SIZE, icon::ICON_SIZE).ok()
+        }
+    }
 }
 
 fn app_icon() -> Option<tao::window::Icon> {
@@ -407,6 +419,10 @@ fn main() {
     let mut height = 460.0;
     let mut anchor: Option<Rect> = None;
     let mut hidden_at = Instant::now() - Duration::from_secs(1);
+    // Windows bounces focus to the taskbar right after a tray click (and back
+    // from the tray menu), so only auto-hide once the panel really had focus.
+    let mut shown_at = Instant::now();
+    let mut got_focus = false;
     let mut last_tick = Instant::now();
     let mut stats_dirty = false;
     let mut last_stats_save = Instant::now();
@@ -490,6 +506,7 @@ fn main() {
                 match Config::load() {
                     Ok(c) => {
                         cfg = c;
+                        refresh_icon = true;
                         clicks::set_enabled(cfg.count_clicks);
                         light_i.set_checked(cfg.lighting_enabled);
                         count_i.set_checked(cfg.count_clicks);
@@ -518,19 +535,18 @@ fn main() {
 
         match event {
             Event::NewEvents(StartCause::Init) => {
-                let rgba = icon::render(None, light_taskbar);
                 tray = TrayIconBuilder::new()
                     .with_menu(Box::new(menu.take().unwrap()))
                     .with_menu_on_left_click(false)
                     .with_tooltip(tooltip(None))
-                    .with_icon(Icon::from_rgba(rgba, icon::ICON_SIZE, icon::ICON_SIZE).unwrap())
+                    .with_icon(tray_image(&cfg, None, light_taskbar).unwrap())
                     .build()
                     .ok();
                 if let Some(e) = &cfg_error {
                     platform::toast("config.json has an error — using defaults", e);
                 }
                 if after_update {
-                    platform::toast(APP_NAME, &format!("Updated to build {}", updater::build_short()));
+                    platform::toast(APP_NAME, &format!("Updated to version {}", updater::VERSION));
                 }
             }
 
@@ -548,11 +564,11 @@ fn main() {
                             spawn_install(upd_proxy.clone(), a.clone());
                         } else {
                             upd.status = "available";
-                            if upd.notified != a.sha {
-                                upd.notified = a.sha.clone();
+                            if upd.notified != a.version {
+                                upd.notified = a.version.clone();
                                 platform::toast(
                                     "Update available",
-                                    &format!("Build {} is ready. Open the panel to install.", &a.sha[..7.min(a.sha.len())]),
+                                    &format!("Version {} is ready. Open the panel to install.", a.version),
                                 );
                             }
                         }
@@ -665,6 +681,8 @@ fn main() {
                     place(&window, &rect, height);
                     window.set_visible(true);
                     window.set_focus();
+                    shown_at = Instant::now();
+                    got_focus = false;
                     refresh_ui = true;
                 }
             }
@@ -677,6 +695,8 @@ fn main() {
                     }
                     window.set_visible(true);
                     window.set_focus();
+                    shown_at = Instant::now();
+                    got_focus = false;
                     refresh_ui = true;
                 } else if e.id == *mouse_i.id() {
                     if mouse_win.is_none() {
@@ -852,6 +872,11 @@ fn main() {
                                 platform::set_tray_promoted(false);
                             }
                         }
+                        "tray_icon" => {
+                            cfg.tray_icon = if msg.name == "app" { config::TrayIcon::App } else { config::TrayIcon::Battery };
+                            cfg.save();
+                            refresh_icon = true;
+                        }
                         "auto_update" => {
                             cfg.auto_update = msg.on;
                             cfg.save();
@@ -888,6 +913,21 @@ fn main() {
                             stats_ready = true;
                             refresh_stats = true;
                         }
+                        "height" => {
+                            // Grow the window to fit the content, up to ~92% of the screen.
+                            if let Some((w, _)) = &stats_win {
+                                let scale = w.scale_factor();
+                                let screen = w
+                                    .current_monitor()
+                                    .map(|m| m.size().height as f64 / scale)
+                                    .unwrap_or(1000.0);
+                                let want = (msg.value + 2.0).min(screen * 0.92);
+                                let cur = w.inner_size().to_logical::<f64>(scale);
+                                if want > cur.height + 1.0 {
+                                    w.set_inner_size(LogicalSize::new(cur.width, want));
+                                }
+                            }
+                        }
                         "reset" => {
                             let _ = clicks::drain();
                             stats = clicks::Stats::default();
@@ -903,9 +943,18 @@ fn main() {
 
             Event::WindowEvent { window_id, event, .. } => {
                 if window_id == window.id() {
-                    if let WindowEvent::Focused(false) = event {
-                        window.set_visible(false);
-                        hidden_at = Instant::now();
+                    match event {
+                        WindowEvent::Focused(true) => got_focus = true,
+                        WindowEvent::Focused(false) if window.is_visible() => {
+                            if got_focus && shown_at.elapsed() > Duration::from_millis(500) {
+                                window.set_visible(false);
+                                hidden_at = Instant::now();
+                            } else {
+                                // Focus blip while opening: take it back.
+                                window.set_focus();
+                            }
+                        }
+                        _ => {}
                     }
                 } else if mouse_win.as_ref().is_some_and(|(w, _)| w.id() == window_id) {
                     if let WindowEvent::CloseRequested = event {
@@ -917,6 +966,12 @@ fn main() {
                         stats_win = None; // drop the webview; reopened on demand
                     }
                 }
+            }
+
+            // Window/session teardown (e.g. Windows signing out): save what we have.
+            Event::LoopDestroyed => {
+                stats.add(clicks::drain());
+                stats.save();
             }
 
             _ => {}
@@ -936,8 +991,7 @@ fn main() {
         }
         if refresh_icon {
             if let Some(t) = &tray {
-                let rgba = icon::render(status.as_ref(), light_taskbar);
-                let _ = t.set_icon(Icon::from_rgba(rgba, icon::ICON_SIZE, icon::ICON_SIZE).ok());
+                let _ = t.set_icon(tray_image(&cfg, status.as_ref(), light_taskbar));
                 let _ = t.set_tooltip(Some(tooltip(status.as_ref())));
             }
         }

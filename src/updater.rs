@@ -1,4 +1,5 @@
-//! Self-update from the repo's rolling `latest` GitHub release.
+//! Self-update from the repo's newest versioned GitHub release (vX.Y.Z).
+//! The rolling `latest` pre-release is for testing and is never offered.
 //!
 //! Uses Windows' built-in curl.exe (Windows 10 1803+), so no TLS stack ships
 //! in the exe. The downloaded exe is verified against the release's .sha256
@@ -13,6 +14,18 @@ use std::process::Command;
 pub const REPO: &str = "jrounds99/no-ghub-thanks";
 const ASSET: &str = "no-ghub-thanks.exe";
 pub const BUILD_SHA: &str = env!("BUILD_SHA");
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// "v1.2.3" / "1.2.3" -> (1, 2, 3). Missing parts are 0.
+pub fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
+    let s = s.trim().trim_start_matches(['v', 'V']);
+    let core = s.split(['-', '+']).next()?;
+    let mut it = core.split('.').map(|p| p.parse::<u32>());
+    let major = it.next()?.ok()?;
+    let minor = it.next().unwrap_or(Ok(0)).ok()?;
+    let patch = it.next().unwrap_or(Ok(0)).ok()?;
+    Some((major, minor, patch))
+}
 
 pub fn build_short() -> String {
     BUILD_SHA.chars().take(7).collect()
@@ -20,7 +33,7 @@ pub fn build_short() -> String {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Available {
-    pub sha: String,
+    pub version: String,
     pub exe_url: String,
     pub hash_url: Option<String>,
 }
@@ -41,16 +54,17 @@ fn curl(args: &[&str]) -> Result<Vec<u8>, String> {
     }
 }
 
-/// Ask GitHub for the latest build. Ok(None) = already up to date.
+/// Ask GitHub for the newest version. Ok(None) = already up to date.
 pub fn check() -> Result<Option<Available>, String> {
-    let url = format!("https://api.github.com/repos/{REPO}/releases/tags/latest");
+    // /releases/latest skips pre-releases, i.e. the rolling test build.
+    let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
     let body = curl(&["-H", "Accept: application/vnd.github+json", &url])?;
     let v: serde_json::Value = serde_json::from_slice(&body).map_err(|e| format!("bad response: {e}"))?;
-    let sha = v["target_commitish"].as_str().unwrap_or_default().to_string();
-    if sha.is_empty() {
-        return Err("release has no commit".into());
-    }
-    if sha == BUILD_SHA {
+    let tag = v["tag_name"].as_str().unwrap_or_default();
+    let (Some(remote), Some(local)) = (parse_version(tag), parse_version(VERSION)) else {
+        return Err(format!("unrecognized release version '{tag}'"));
+    };
+    if remote <= local {
         return Ok(None);
     }
     let assets = v["assets"].as_array().cloned().unwrap_or_default();
@@ -62,7 +76,11 @@ pub fn check() -> Result<Option<Available>, String> {
             .map(String::from)
     };
     let exe_url = url_of(ASSET).ok_or("release has no exe")?;
-    Ok(Some(Available { sha, exe_url, hash_url: url_of(&format!("{ASSET}.sha256")) }))
+    Ok(Some(Available {
+        version: format!("{}.{}.{}", remote.0, remote.1, remote.2),
+        exe_url,
+        hash_url: url_of(&format!("{ASSET}.sha256")),
+    }))
 }
 
 fn sha256_hex(path: &Path) -> Result<String, String> {
@@ -109,5 +127,18 @@ pub fn cleanup_old() {
     if let Ok(exe) = std::env::current_exe() {
         let _ = std::fs::remove_file(sibling(&exe, "old"));
         let _ = std::fs::remove_file(sibling(&exe, "new"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn versions_compare() {
+        assert_eq!(parse_version("v1.0.0"), Some((1, 0, 0)));
+        assert_eq!(parse_version("1.2"), Some((1, 2, 0)));
+        assert_eq!(parse_version("v2.0.1-beta"), Some((2, 0, 1)));
+        assert!(parse_version("v1.0.10") > parse_version("v1.0.9"));
+        assert!(parse_version("latest").is_none());
     }
 }

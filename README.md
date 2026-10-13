@@ -37,7 +37,7 @@ Windows 10/11 only (needs WebView2, which ships with Windows 11).
 
 ## Install
 
-1. Download `no-ghub-thanks.exe` from [Releases](../../releases) (`latest` is built from `main` on every push).
+1. Download `no-ghub-thanks.exe` from the newest **v** release on the [Releases](../../releases/latest) page. (The `latest` pre-release is a rolling test build of `main`.)
 2. Uninstall G HUB.
 3. Disable the **Logitech LampArray Service** (ships with the device driver, survives the G HUB uninstall, and fights over the LEDs). Admin PowerShell:
    ```powershell
@@ -71,13 +71,16 @@ Safety: before every save the current onboard memory is backed up to `%APPDATA%\
 |---|---|
 | Battery saver | Lighting off at or below the chosen % while discharging; back on when charging. |
 | Low battery alert | Windows notification at the chosen %. |
+| Tray icon | Battery % (with a level bar) or the app's own icon. Battery is always in the tooltip and panel. |
 | Start with Windows | Launches straight to the tray at sign-in. |
 | Always show in tray | Sets Windows 11's per-app "show in taskbar" toggle for this app so the icon stays visible. Same switch as Settings → Personalization → Taskbar → Other system tray icons. |
 | Install updates automatically | Otherwise you get a notification and an **Update now** button. |
 
-## Updates
+## Versions and updates
 
-The app checks this repo's rolling `latest` release once a day (and on **Check for updates**). Updating downloads the new exe with Windows' built-in `curl.exe`, verifies it against the release's `.sha256`, swaps it in place and restarts. Settings and click stats live in `%APPDATA%\no-ghub-thanks` and are untouched. Documentation-only commits don't produce a new build, so they never trigger an update.
+Versions follow `MAJOR.MINOR.PATCH`, starting at **1.0.0**; the panel footer shows the one you're running. Each release is a `vX.Y.Z` tag with its exe attached.
+
+The app checks for a newer version release once a day (and on **Check for updates**); the rolling test build is never offered. Updating downloads the new exe with Windows' built-in `curl.exe`, verifies it against the release's `.sha256`, swaps it in place and restarts. Settings and click stats live in `%APPDATA%\no-ghub-thanks`, separate from the exe, so updates never touch them. Click stats are saved every 15 seconds and on exit, a safety copy (`clicks.backup.json`) is made at every launch, and a damaged file is set aside rather than overwritten. Documentation-only commits don't produce a new build, so they never trigger an update.
 
 ## Click counter
 

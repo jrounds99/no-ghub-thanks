@@ -17,6 +17,17 @@ pub enum Effect {
     Battery,
 }
 
+/// What the tray icon shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TrayIcon {
+    /// Battery percentage + level bar.
+    #[default]
+    Battery,
+    /// The app's own icon (battery still in the tooltip and panel).
+    App,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
@@ -61,6 +72,8 @@ pub struct Config {
     /// Install new builds without asking (otherwise: notification + button).
     #[serde(default)]
     pub auto_update: bool,
+    #[serde(default)]
+    pub tray_icon: TrayIcon,
     pub profiles: Vec<Profile>,
 }
 
@@ -81,6 +94,7 @@ impl Default for Config {
             lights_off_below: 0,
             always_show_in_tray: true,
             auto_update: false,
+            tray_icon: TrayIcon::Battery,
             profiles: vec![
                 p("White", Effect::Static, "#FFFFFF", 3000),
                 p("Red", Effect::Static, "#FF0000", 3000),

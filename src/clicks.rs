@@ -45,7 +45,11 @@ pub fn drain() -> [u64; KINDS] {
     std::array::from_fn(|i| PENDING[i].swap(0, Ordering::Relaxed))
 }
 
+/// Lives in %APPDATA%\no-ghub-thanks\clicks.json, separate from the exe, so
+/// updates never touch it. Unknown/missing fields default, so newer and older
+/// versions can read each other's files.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Stats {
     /// "YYYY-MM-DD" (local) -> [left, right, middle, back, forward, wheel]
     pub days: BTreeMap<String, [u64; KINDS]>,
@@ -58,11 +62,26 @@ impl Stats {
         crate::config::Config::dir().join("clicks.json")
     }
 
+    /// Load stats. A file that can't be parsed is moved aside (never
+    /// overwritten); a good one is copied to clicks.backup.json first.
     pub fn load() -> Stats {
-        std::fs::read_to_string(Self::path())
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        let path = Self::path();
+        let Ok(text) = std::fs::read_to_string(&path) else { return Stats::default() };
+        match serde_json::from_str::<Stats>(&text) {
+            Ok(s) => {
+                let _ = std::fs::copy(&path, path.with_file_name("clicks.backup.json"));
+                s
+            }
+            Err(_) => {
+                let aside = path.with_file_name(format!("clicks.corrupt-{}.json", local_stamp()));
+                let _ = std::fs::rename(&path, aside);
+                // Fall back to the last good copy if there is one.
+                std::fs::read_to_string(path.with_file_name("clicks.backup.json"))
+                    .ok()
+                    .and_then(|t| serde_json::from_str(&t).ok())
+                    .unwrap_or_default()
+            }
+        }
     }
 
     pub fn save(&self) {

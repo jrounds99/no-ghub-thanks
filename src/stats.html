@@ -249,7 +249,7 @@
     $('body').classList.toggle('hidden', total === 0);
     animateOdo(total);
     $('since').textContent = keys.length ? `since ${parse(keys[0]).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}` + (d.enabled ? '' : ' · counting is paused') : (d.enabled ? 'Counting starts now.' : 'Counting is off. Turn it on in the panel.');
-    if (!total) return;
+    if (!total) { fit(); return; }
 
     const today = parse(d.today), m0 = monday(today);
     let week = 0; for (let j = 0; j < 7; j++) { const x = new Date(m0); x.setDate(x.getDate() + j); week += clicks(days[key(x)]); }
@@ -267,7 +267,10 @@
     $('t-streak').textContent = streak;
 
     drawBars(); drawDonut(tot); drawHours(); facts(tot, total, keys.length);
+    fit();
   };
+  // Ask the app to size the window to the content (it only ever grows it).
+  const fit = () => requestAnimationFrame(() => send('height', { value: Math.ceil(document.documentElement.scrollHeight) }));
 
   document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
     document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));

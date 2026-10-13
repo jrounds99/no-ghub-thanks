@@ -195,6 +195,8 @@
       <select id="saver"><option value="0">Never</option><option>10</option><option>15</option><option>20</option><option>30</option><option>50</option></select></div>
     <div class="set"><div><div>Low battery alert</div><div class="sub">Notify at</div></div>
       <select id="alert"><option value="0">Never</option><option>5</option><option>10</option><option>15</option><option>20</option><option>25</option></select></div>
+    <div class="set"><div><div>Tray icon</div><div class="sub">Battery % or the app's own icon</div></div>
+      <select id="trayicon"><option value="battery">Battery %</option><option value="app">App icon</option></select></div>
     <div class="set"><div>Start with Windows</div><label class="switch sm"><input type="checkbox" id="auto"><span></span></label></div>
     <div class="set"><div><div>Always show in tray</div><div class="sub">Keep the icon out of the overflow menu</div></div><label class="switch sm"><input type="checkbox" id="pin"><span></span></label></div>
     <div class="set"><div><div>Install updates automatically</div><div class="sub">Otherwise you get a notification</div></div><label class="switch sm"><input type="checkbox" id="autoupd"><span></span></label></div>
@@ -278,6 +280,7 @@
     $('auto').checked = s.autostart;
     $('pin').checked = s.pin;
     $('autoupd').checked = s.auto_update;
+    $('trayicon').value = s.tray_icon;
     $('saver').value = String(s.off_below);
     $('alert').value = String(s.low_alert);
     $('warn').classList.toggle('hidden', !s.lamparray);
@@ -287,11 +290,12 @@
     $('csub').textContent = s.clicks.enabled ? `Today ${n(s.clicks.today)} · All time ${n(s.clicks.total)}` : 'Off';
 
     const u = s.update;
-    $('ver').textContent = 'Build ' + u.current;
+    $('ver').textContent = 'v' + u.current;
+    $('ver').title = 'Build ' + u.build;
     $('check').textContent = { checking: 'Checking…', uptodate: 'Up to date ✓', error: 'Check failed, retry' }[u.status] || 'Check for updates';
     $('check').title = u.error || '';
     $('upd').classList.toggle('hidden', !(u.status === 'available' || u.status === 'installing'));
-    $('updtext').textContent = u.status === 'installing' ? 'Installing update…' : `New build ${u.latest} is available`;
+    $('updtext').textContent = u.status === 'installing' ? 'Installing update…' : `Version ${u.latest} is available`;
     $('updbtn').disabled = u.status === 'installing';
 
     send('height', { value: Math.ceil(document.body.scrollHeight) });
@@ -301,6 +305,7 @@
   $('auto').onchange = e => send('autostart', { on: e.target.checked });
   $('pin').onchange = e => send('pin', { on: e.target.checked });
   $('autoupd').onchange = e => send('auto_update', { on: e.target.checked });
+  $('trayicon').onchange = e => send('tray_icon', { name: e.target.value });
   $('saver').onchange = e => send('off_below', { value: +e.target.value });
   $('alert').onchange = e => send('low_alert', { value: +e.target.value });
   $('bright').oninput = e => {
