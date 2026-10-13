@@ -27,7 +27,14 @@
     }
   }
   * { box-sizing: border-box; margin: 0; }
-  html, body { background: var(--bg); color: var(--text); overflow: hidden; user-select: none; }
+  html, body { background: var(--bg); color: var(--text); overflow-x: hidden; user-select: none; }
+  html { overflow-y: auto; scrollbar-width: thin; }
+  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; border: 2px solid var(--bg); }
+  details.settings summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; font-weight: 600; }
+  details.settings summary::after { content: "›"; color: var(--muted); font-size: 16px; transition: transform .15s; }
+  details.settings[open] summary::after { transform: rotate(90deg); }
+  details.settings[open] summary { margin-bottom: 6px; }
   body { font: 13px/1.35 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; padding: 12px; }
 
   .hero {
@@ -190,7 +197,8 @@
     <a class="statlink" id="stats">Click stats ›</a>
   </div>
 
-  <div class="card">
+  <details class="card settings" id="settings">
+    <summary>Settings</summary>
     <div class="set"><div><div>Battery saver</div><div class="sub">Lighting off below</div></div>
       <select id="saver"><option value="0">Never</option><option>10</option><option>15</option><option>20</option><option>30</option><option>50</option></select></div>
     <div class="set"><div><div>Low battery alert</div><div class="sub">Notify at</div></div>
@@ -200,7 +208,7 @@
     <div class="set"><div>Start with Windows</div><label class="switch sm"><input type="checkbox" id="auto"><span></span></label></div>
     <div class="set"><div><div>Always show in tray</div><div class="sub">Keep the icon out of the overflow menu</div></div><label class="switch sm"><input type="checkbox" id="pin"><span></span></label></div>
     <div class="set"><div><div>Install updates automatically</div><div class="sub">Otherwise you get a notification</div></div><label class="switch sm"><input type="checkbox" id="autoupd"><span></span></label></div>
-  </div>
+  </details>
 
   <div class="foot">
     <div class="ver"><span id="ver"></span> · <a id="check">Check for updates</a></div>
@@ -327,6 +335,10 @@
   };
   $('del').onclick = () => { if (confirm(`Delete profile "${$('cname').textContent}"?`)) send('delete_profile'); };
   $('custom').ontoggle = () => send('height', { value: Math.ceil(document.body.scrollHeight) });
+  $('settings').ontoggle = () => {
+    send('height', { value: Math.ceil(document.body.scrollHeight) });
+    if ($('settings').open) setTimeout(() => $('settings').scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
+  };
 
   $('clicks').onchange = e => send('clicks', { on: e.target.checked });
   $('stats').onclick = () => send('stats');

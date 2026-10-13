@@ -1,6 +1,6 @@
 [package]
 name = "no-ghub-thanks"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2024"
 description = "Tiny tray replacement for Logitech G HUB: battery %, lighting on/off, lighting profiles. Talks HID++ 2.0 directly."
 license = "MIT"

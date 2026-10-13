@@ -770,7 +770,15 @@ fn main() {
                             refresh_ui = true;
                         }
                         "height" => {
-                            let h = msg.value.clamp(200.0, 900.0);
+                            // Fit the content, but never taller than the screen
+                            // minus taskbar and margins; the page scrolls beyond that.
+                            let scale = window.scale_factor();
+                            let screen = window
+                                .current_monitor()
+                                .or_else(|| window.primary_monitor())
+                                .map(|m| m.size().height as f64 / scale)
+                                .unwrap_or(900.0);
+                            let h = msg.value.clamp(200.0, (screen - 96.0).max(300.0));
                             if (h - height).abs() >= 1.0 {
                                 height = h;
                                 window.set_inner_size(LogicalSize::new(WIDTH, height));
