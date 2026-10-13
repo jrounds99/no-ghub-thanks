@@ -4,6 +4,7 @@
 
 - **Battery % in the system tray**, with a low-battery toast.
 - **Lighting control** — a master on/off switch that sticks across reboots, sleep/wake and cable swaps, plus lighting profiles (static, pulse, color cycle, battery-level color).
+- **Click counter** (optional, off by default) with a stats page: all-time odometer, daily / weekly / monthly charts, averages, best day, streaks, per-button split, time-of-day and some deeply unnecessary facts.
 
 It talks to the mouse directly over Logitech's HID++ 2.0 protocol. No services, no updater, no account, no telemetry. One ~2 MB exe.
 
@@ -25,6 +26,19 @@ Built and tested against a **G502 X PLUS** over both the LIGHTSPEED receiver and
 - **Tray icon**: battery % with a level bar. Blue bar = charging. `--` = mouse asleep or not found. Hover for details.
 - **Panel** (left-click): battery, lighting switch, profile chips, brightness, Start with Windows. Follows your Windows light/dark mode and accent color.
 - **Lighting off** means off: it's re-applied every time the mouse connects or wakes, because the mouse falls back to its onboard lighting on every power cycle.
+
+## Click counter
+
+Turn on **Click counter** in the panel (or **Count clicks** in the tray menu). Clicks are read from Windows Raw Input — the same events every app receives — so there is no extra traffic to the mouse and nothing is added to the input path. Counted: left, right, middle, back, forward, wheel notches. The mouse's DPI and G-shift buttons are handled inside the mouse and never reach Windows, so they aren't counted.
+
+Stats live in `%APPDATA%\no-ghub-thanks\clicks.json` (one row per day). They never leave the PC. **Reset stats** is at the bottom of the stats page.
+
+## Custom name
+
+Task Manager shows the name baked into the exe — **No G HUB Mouse Tray** by default. To build one with your own name:
+
+- **GitHub:** Actions → **build** → **Run workflow** → type a *Display name* → download the exe from the run's artifacts.
+- **Locally:** `$env:APP_DISPLAY_NAME = "Mouse Buddy"; cargo build --release`
 
 ## Profiles
 

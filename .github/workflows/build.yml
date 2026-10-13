@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      display_name:
+        description: "Display name (what Task Manager shows). Leave blank for the default."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -21,6 +26,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
+        env:
+          APP_DISPLAY_NAME: ${{ inputs.display_name }}
         run: cargo build --release --locked
 
       - name: Package
@@ -36,8 +43,9 @@ jobs:
           path: dist/*
 
       # Every push to main refreshes the rolling "latest" pre-release.
+      # Custom-name builds (manual runs with a display name) stay as artifacts only.
       - name: Publish latest
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

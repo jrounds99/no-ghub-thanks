@@ -9,10 +9,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const LEFT: usize = 0;
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const RIGHT: usize = 1;
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const MIDDLE: usize = 2;
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const BACK: usize = 3;
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const FORWARD: usize = 4;
 pub const WHEEL: usize = 5;
 pub const KINDS: usize = 6;
@@ -28,6 +33,7 @@ pub fn set_enabled(on: bool) {
     }
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn bump(kind: usize, n: u64) {
     if ENABLED.load(Ordering::Relaxed) {
         PENDING[kind].fetch_add(n, Ordering::Relaxed);
