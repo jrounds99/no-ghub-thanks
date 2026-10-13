@@ -46,6 +46,9 @@ pub struct Config {
     pub brightness: u8,
     /// Toast when battery falls to this % while discharging (0 = never).
     pub low_battery_alert: u8,
+    /// Count mouse clicks for the stats page (local only).
+    #[serde(default)]
+    pub count_clicks: bool,
     pub profiles: Vec<Profile>,
 }
 
@@ -62,6 +65,7 @@ impl Default for Config {
             active_profile: "White".into(),
             brightness: 100,
             low_battery_alert: 15,
+            count_clicks: false,
             profiles: vec![
                 p("White", Effect::Static, "#FFFFFF", 3000),
                 p("Red", Effect::Static, "#FF0000", 3000),

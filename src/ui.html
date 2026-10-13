@@ -93,6 +93,8 @@
   .foot label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; cursor: pointer; }
   .links a { color: var(--muted); font-size: 12px; margin-left: 12px; cursor: pointer; text-decoration: none; }
   .links a:hover { color: var(--text); }
+  .statlink { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
+              background: linear-gradient(90deg, var(--accent), #ec4899); -webkit-background-clip: text; color: transparent; }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -118,6 +120,14 @@
   <div class="warn hidden" id="warn">
     Logitech LampArray Service is running and may override your lighting.
     <a id="fix">Copy fix command</a>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div><div class="label">Click counter</div><div class="sub" id="csub">Off</div></div>
+      <label class="switch"><input type="checkbox" id="clicks"><span></span></label>
+    </div>
+    <a class="statlink" id="stats">Click stats ›</a>
   </div>
 
   <div class="foot">
@@ -170,6 +180,9 @@
     $('bright').style.setProperty('--v', ((s.brightness - 10) / 90 * 100) + '%');
     $('bval').textContent = s.brightness + '%';
     $('auto').checked = s.autostart;
+    $('clicks').checked = s.clicks.enabled;
+    const n = v => v >= 1e4 ? (v / 1e3).toFixed(v >= 1e5 ? 0 : 1) + 'k' : v.toLocaleString();
+    $('csub').textContent = s.clicks.enabled ? `Today ${n(s.clicks.today)} · All time ${n(s.clicks.total)}` : 'Off';
     $('warn').classList.toggle('hidden', !s.lamparray);
     send('height', { value: Math.ceil(document.body.scrollHeight) });
   };
@@ -182,6 +195,8 @@
   };
   $('bright').onchange = e => send('brightness', { value: +e.target.value });
   $('edit').onclick = () => send('edit');
+  $('clicks').onchange = e => send('clicks', { on: e.target.checked });
+  $('stats').onclick = () => send('stats');
   $('quit').onclick = () => send('quit');
   $('fix').onclick = () => { navigator.clipboard.writeText(state.fix); $('fix').textContent = 'Copied — paste into PowerShell'; };
   document.addEventListener('keydown', e => { if (e.key === 'Escape') send('hide'); });

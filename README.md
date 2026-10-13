@@ -1,6 +1,6 @@
-# no-ghub-thanks
+# No G HUB Mouse Tray
 
-A tiny Windows tray app that replaces Logitech G HUB for the two things most people actually need:
+`no-ghub-thanks` — a tiny Windows tray app that replaces Logitech G HUB for the two things most people actually need:
 
 - **Battery % in the system tray**, with a low-battery toast.
 - **Lighting control** — a master on/off switch that sticks across reboots, sleep/wake and cable swaps, plus lighting profiles (static, pulse, color cycle, battery-level color).

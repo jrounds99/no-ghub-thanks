@@ -1,0 +1,281 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --accent: #3b82f6;
+    --bg: #f3f3f3; --card: #fff; --text: #1b1b1b; --muted: #666; --line: rgba(0,0,0,.08); --grid: rgba(0,0,0,.06);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1c1c1c; --card: #272727; --text: #f2f2f2; --muted: #a3a3a3; --line: rgba(255,255,255,.08); --grid: rgba(255,255,255,.06); color-scheme: dark; }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; padding: 18px; user-select: none; }
+  h2 { font-size: 13px; font-weight: 600; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .grid { display: grid; gap: 12px; }
+
+  .hero { position: relative; overflow: hidden; border-radius: 14px; padding: 20px 22px; color: #fff;
+          background: linear-gradient(120deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #ec4899) 60%, #f59e0b); }
+  .hero::before, .hero::after { content: ""; position: absolute; border-radius: 50%; background: rgba(255,255,255,.14); }
+  .hero::before { width: 220px; height: 220px; right: -60px; top: -90px; }
+  .hero::after { width: 120px; height: 120px; right: 120px; bottom: -70px; }
+  .hero .k { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; opacity: .85; }
+  .odo { font: 700 52px/1.05 "Segoe UI Variable Display", "Segoe UI", sans-serif; letter-spacing: -1px; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+  .hero .sub { opacity: .9; }
+  .mouse { position: absolute; right: 28px; top: 22px; font-size: 44px; animation: wiggle 3s ease-in-out infinite; transform-origin: 50% 80%; }
+  @keyframes wiggle { 0%,100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg) translateY(-3px); } }
+
+  .tiles { grid-template-columns: repeat(6, 1fr); margin-top: 12px; }
+  .tile .v { font: 600 20px/1.2 "Segoe UI Variable Display", "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; }
+  .tile .l { color: var(--muted); font-size: 11.5px; }
+  .tile .e { float: right; font-size: 16px; }
+
+  .row2 { grid-template-columns: 2fr 1fr; margin-top: 12px; }
+  .tabs { display: flex; gap: 4px; background: var(--bg); border-radius: 8px; padding: 3px; }
+  .tabs button { border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
+  .tabs button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+  svg { display: block; width: 100%; overflow: visible; }
+  .bar { transition: opacity .15s; }
+  .bar:hover { opacity: .75; }
+  .axis { fill: var(--muted); font-size: 10px; }
+  .avg { stroke: var(--text); stroke-dasharray: 3 4; opacity: .45; }
+  .legend { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 8px; align-items: center; margin-top: 10px; font-size: 12px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; }
+  .legend .n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .row3 { grid-template-columns: 1fr 1fr; margin-top: 12px; }
+  .facts { list-style: none; padding: 0; display: grid; gap: 8px; }
+  .facts li { display: flex; gap: 10px; align-items: flex-start; }
+  .facts .i { font-size: 18px; width: 24px; text-align: center; flex: none; }
+  .facts b { font-variant-numeric: tabular-nums; }
+  .foot { display: flex; justify-content: space-between; color: var(--muted); font-size: 11.5px; margin-top: 12px; }
+  .foot a { color: var(--muted); cursor: pointer; }
+  .foot a:hover { color: #e5484d; }
+  .empty { text-align: center; padding: 60px 0; color: var(--muted); }
+  .empty .big { font-size: 48px; margin-bottom: 8px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <div class="hero">
+    <div class="mouse">🖱️</div>
+    <div class="k">All-time clicks</div>
+    <div class="odo" id="odo">0</div>
+    <div class="sub" id="since">Counting starts now.</div>
+  </div>
+
+  <div id="empty" class="card empty hidden" style="margin-top:12px">
+    <div class="big">🫥</div>
+    Nothing yet. Go click something.
+  </div>
+
+  <div id="body">
+    <div class="grid tiles">
+      <div class="card tile"><span class="e">☀️</span><div class="v" id="t-today">0</div><div class="l">Today</div></div>
+      <div class="card tile"><span class="e">📅</span><div class="v" id="t-week">0</div><div class="l">This week</div></div>
+      <div class="card tile"><span class="e">🗓️</span><div class="v" id="t-month">0</div><div class="l">This month</div></div>
+      <div class="card tile"><span class="e">⚖️</span><div class="v" id="t-avg">0</div><div class="l">Avg per active day</div></div>
+      <div class="card tile"><span class="e">🏆</span><div class="v" id="t-best">0</div><div class="l" id="t-bestd">Best day</div></div>
+      <div class="card tile"><span class="e">🔥</span><div class="v" id="t-streak">0</div><div class="l">Day streak</div></div>
+    </div>
+
+    <div class="grid row2">
+      <div class="card">
+        <h2><span id="ctitle">Last 30 days</span>
+          <span class="tabs"><button data-r="day" class="on">Daily</button><button data-r="week">Weekly</button><button data-r="month">Monthly</button></span>
+        </h2>
+        <svg id="chart" viewBox="0 0 560 200" height="200"></svg>
+      </div>
+      <div class="card">
+        <h2>Who does the work</h2>
+        <svg id="donut" viewBox="0 0 160 160" height="150"></svg>
+        <div class="legend" id="legend"></div>
+      </div>
+    </div>
+
+    <div class="grid row3">
+      <div class="card">
+        <h2><span>When you click</span><span class="axis" id="peak"></span></h2>
+        <svg id="hours" viewBox="0 0 400 110" height="110"></svg>
+      </div>
+      <div class="card">
+        <h2>Completely necessary facts</h2>
+        <ul class="facts" id="facts"></ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot"><span>Counted locally from Windows input. Never leaves this PC.</span><a id="reset">Reset stats</a></div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const send = (cmd, extra) => window.ipc.postMessage(JSON.stringify(Object.assign({ cmd }, extra || {})));
+  const fmt = n => Math.round(n).toLocaleString();
+  const short = n => n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M' : n >= 1e4 ? (n / 1e3).toFixed(n >= 1e5 ? 0 : 1) + 'k' : fmt(n);
+  const BUTTONS = [['Left', '#6366f1'], ['Right', '#ec4899'], ['Middle', '#f59e0b'], ['Back', '#10b981'], ['Forward', '#06b6d4']];
+  let data = null, range = 'day', shown = 0;
+
+  // ---------- dates ----------
+  const parse = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+  const key = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const monday = d => { const x = new Date(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+  const clicks = row => row ? row[0] + row[1] + row[2] + row[3] + row[4] : 0;
+
+  function buckets(days, r, today) {
+    const out = [];
+    if (r === 'day') {
+      for (let i = 29; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i);
+        out.push({ label: d.getDate() === 1 || i === 29 || i === 0 ? (d.getMonth() + 1) + '/' + d.getDate() : '', tip: d.toDateString(), v: clicks(days[key(d)]) }); }
+    } else if (r === 'week') {
+      const m0 = monday(today);
+      for (let i = 11; i >= 0; i--) { const s = new Date(m0); s.setDate(s.getDate() - 7 * i); let v = 0;
+        for (let j = 0; j < 7; j++) { const d = new Date(s); d.setDate(d.getDate() + j); v += clicks(days[key(d)]); }
+        out.push({ label: (s.getMonth() + 1) + '/' + s.getDate(), tip: 'Week of ' + s.toDateString(), v }); }
+    } else {
+      for (let i = 11; i >= 0; i--) { const s = new Date(today.getFullYear(), today.getMonth() - i, 1); const p = key(s).slice(0, 7); let v = 0;
+        for (const k in days) if (k.startsWith(p)) v += clicks(days[k]);
+        out.push({ label: s.toLocaleString(undefined, { month: 'short' }), tip: s.toLocaleString(undefined, { month: 'long', year: 'numeric' }), v }); }
+    }
+    return out;
+  }
+
+  // ---------- charts ----------
+  const svg = (tag, attrs, text) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
+
+  function gradient(defs, id, a, b) {
+    const g = svg('linearGradient', { id, x1: 0, y1: 0, x2: 0, y2: 1 });
+    g.append(svg('stop', { offset: 0, 'stop-color': a }), svg('stop', { offset: 1, 'stop-color': b }));
+    defs.append(g);
+  }
+
+  function drawBars() {
+    const el = $('chart'); el.replaceChildren();
+    const today = parse(data.today);
+    const b = buckets(data.days, range, today);
+    $('ctitle').textContent = { day: 'Last 30 days', week: 'Last 12 weeks', month: 'Last 12 months' }[range];
+    const W = 560, H = 200, top = 10, bot = 22, left = 34;
+    const max = Math.max(10, ...b.map(x => x.v)) * 1.1;
+    const nz = b.filter(x => x.v > 0); const avg = nz.length ? nz.reduce((s, x) => s + x.v, 0) / nz.length : 0;
+    const defs = svg('defs'); gradient(defs, 'gb', 'var(--accent)', 'color-mix(in srgb, var(--accent) 35%, #ec4899)');
+    gradient(defs, 'gh', '#f59e0b', '#ec4899'); el.append(defs);
+    for (let i = 0; i <= 3; i++) { const y = top + (H - top - bot) * i / 3;
+      el.append(svg('line', { x1: left, x2: W, y1: y, y2: y, stroke: 'var(--grid)' }));
+      el.append(svg('text', { x: left - 6, y: y + 3, 'text-anchor': 'end', class: 'axis' }, short(max * (1 - i / 3)))); }
+    const step = (W - left) / b.length, bw = Math.max(3, step * 0.62);
+    const best = Math.max(...b.map(x => x.v));
+    b.forEach((x, i) => {
+      const h = (H - top - bot) * x.v / max, X = left + i * step + (step - bw) / 2, Y = H - bot - h;
+      const r = svg('rect', { x: X, y: Y, width: bw, height: Math.max(h, x.v ? 2 : 0), rx: Math.min(4, bw / 2),
+                              fill: x.v === best && best > 0 ? 'url(#gh)' : 'url(#gb)', class: 'bar' });
+      r.append(svg('title', {}, x.tip + ': ' + fmt(x.v) + ' clicks'));
+      el.append(r);
+      if (x.label) el.append(svg('text', { x: X + bw / 2, y: H - 6, 'text-anchor': 'middle', class: 'axis' }, x.label));
+    });
+    if (avg) { const y = H - bot - (H - top - bot) * avg / max;
+      el.append(svg('line', { x1: left, x2: W, y1: y, y2: y, class: 'avg' }));
+      el.append(svg('text', { x: W, y: y - 4, 'text-anchor': 'end', class: 'axis' }, 'avg ' + short(avg))); }
+  }
+
+  function drawDonut(tot) {
+    const el = $('donut'); el.replaceChildren(); const lg = $('legend'); lg.replaceChildren();
+    const sum = tot.slice(0, 5).reduce((a, b) => a + b, 0) || 1;
+    const R = 62, C = 2 * Math.PI * R; let off = 0;
+    el.append(svg('circle', { cx: 80, cy: 80, r: R, fill: 'none', stroke: 'var(--grid)', 'stroke-width': 18 }));
+    BUTTONS.forEach(([name, col], i) => {
+      const frac = tot[i] / sum;
+      if (frac > 0) { const c = svg('circle', { cx: 80, cy: 80, r: R, fill: 'none', stroke: col, 'stroke-width': 18,
+          'stroke-dasharray': `${Math.max(frac * C - 2, 0.5)} ${C}`, 'stroke-dashoffset': -off, transform: 'rotate(-90 80 80)', 'stroke-linecap': 'butt' });
+        c.append(svg('title', {}, `${name}: ${fmt(tot[i])}`)); el.append(c); off += frac * C; }
+      const dot = document.createElement('i'); dot.className = 'dot'; dot.style.background = col;
+      const nm = document.createElement('span'); nm.textContent = name;
+      const n = document.createElement('span'); n.className = 'n'; n.textContent = fmt(tot[i]) + ' · ' + Math.round(frac * 100) + '%';
+      lg.append(dot, nm, n);
+    });
+    el.append(svg('text', { x: 80, y: 78, 'text-anchor': 'middle', style: 'font: 600 20px Segoe UI; fill: var(--text)' }, Math.round(tot[0] / sum * 100) + '%'));
+    el.append(svg('text', { x: 80, y: 96, 'text-anchor': 'middle', class: 'axis' }, 'left button'));
+  }
+
+  function drawHours() {
+    const el = $('hours'); el.replaceChildren();
+    const h = data.hours, max = Math.max(1, ...h), W = 400, H = 110, bot = 16, bw = W / 24;
+    const defs = svg('defs'); gradient(defs, 'hh', '#8b5cf6', '#06b6d4'); el.append(defs);
+    h.forEach((v, i) => {
+      const bh = (H - bot) * v / max;
+      const r = svg('rect', { x: i * bw + 1.5, y: H - bot - bh, width: bw - 3, height: Math.max(bh, 1), rx: 2, fill: 'url(#hh)', opacity: 0.35 + 0.65 * v / max, class: 'bar' });
+      r.append(svg('title', {}, `${i}:00 – ${fmt(v)} clicks`)); el.append(r);
+      if (i % 6 === 0) el.append(svg('text', { x: i * bw + bw / 2, y: H - 3, 'text-anchor': 'middle', class: 'axis' }, i === 0 ? '12a' : i === 12 ? '12p' : (i % 12) + (i < 12 ? 'a' : 'p')));
+    });
+    const pk = h.indexOf(Math.max(...h));
+    const mood = pk < 5 ? 'night owl hours' : pk < 9 ? 'early bird' : pk < 12 ? 'morning hustle' : pk < 14 ? 'lunch-break clicker' : pk < 18 ? 'afternoon grind' : pk < 22 ? 'evening session' : 'late-night mode';
+    $('peak').textContent = Math.max(...h) ? `Peak ${pk % 12 || 12}${pk < 12 ? 'am' : 'pm'} · ${mood}` : '';
+  }
+
+  function facts(tot, total, days) {
+    const wheel = tot[5];
+    const travelM = total * 0.0006;                 // ~0.6 mm switch travel per click
+    const forceKg = total * 0.06;                   // ~60 gf to actuate
+    const scrollM = wheel * 0.0033;                 // ~3.3 mm of wheel rim per notch
+    const hoursAt1 = total / 3600;
+    const lr = tot[1] ? (tot[0] / tot[1]) : 0;
+    const list = [
+      ['🏋️', `Your fingers have pressed <b>${fmt(forceKg)} kg</b> total, about <b>${(forceKg / 7.3).toFixed(1)}</b> bowling balls.`],
+      ['📏', `Total button travel: <b>${travelM < 1 ? fmt(travelM * 100) + ' cm' : travelM.toFixed(1) + ' m'}</b>. ${travelM > 3.3 ? `That's ${(travelM / 330 * 100).toFixed(1)}% of the Eiffel Tower.` : 'Keep going, the Eiffel Tower awaits.'}`],
+      ['🛞', `You've scrolled <b>${fmt(wheel)}</b> notches, rolling about <b>${scrollM < 1 ? fmt(scrollM * 100) + ' cm' : scrollM.toFixed(1) + ' m'}</b> of wheel.`],
+      ['⏱️', `Re-clicking all of it at one click per second would take <b>${hoursAt1 < 1 ? fmt(hoursAt1 * 60) + ' minutes' : hoursAt1.toFixed(1) + ' hours'}</b>.`],
+      ['⚖️', lr ? `For every right click you left-click <b>${lr.toFixed(1)}</b> times.` : `Your right button is feeling a little left out.`],
+      ['🗓️', `Tracked for <b>${days}</b> day${days === 1 ? '' : 's'}.`],
+    ];
+    $('facts').innerHTML = list.map(([i, t]) => `<li><span class="i">${i}</span><span>${t}</span></li>`).join('');
+  }
+
+  function animateOdo(to) {
+    const from = shown; shown = to; const t0 = performance.now(), dur = from === 0 ? 1100 : 400;
+    const tick = t => { const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+      $('odo').textContent = fmt(from + (to - from) * e); if (p < 1) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  }
+
+  window.render = d => {
+    data = d;
+    document.documentElement.style.setProperty('--accent', d.accent);
+    const days = d.days, keys = Object.keys(days).sort();
+    const tot = [0, 0, 0, 0, 0, 0]; keys.forEach(k => days[k].forEach((v, i) => tot[i] += v));
+    const total = tot.slice(0, 5).reduce((a, b) => a + b, 0);
+    $('empty').classList.toggle('hidden', total > 0);
+    $('body').classList.toggle('hidden', total === 0);
+    animateOdo(total);
+    $('since').textContent = keys.length ? `since ${parse(keys[0]).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}` + (d.enabled ? '' : ' · counting is paused') : (d.enabled ? 'Counting starts now.' : 'Counting is off. Turn it on in the panel.');
+    if (!total) return;
+
+    const today = parse(d.today), m0 = monday(today);
+    let week = 0; for (let j = 0; j < 7; j++) { const x = new Date(m0); x.setDate(x.getDate() + j); week += clicks(days[key(x)]); }
+    let month = 0; const mp = d.today.slice(0, 7); keys.forEach(k => { if (k.startsWith(mp)) month += clicks(days[k]); });
+    const active = keys.filter(k => clicks(days[k]) > 0);
+    let bestK = active[0], best = 0; active.forEach(k => { const v = clicks(days[k]); if (v > best) { best = v; bestK = k; } });
+    let streak = 0; for (let x = new Date(today); clicks(days[key(x)]) > 0; x.setDate(x.getDate() - 1)) streak++;
+
+    $('t-today').textContent = fmt(clicks(days[d.today]));
+    $('t-week').textContent = short(week);
+    $('t-month').textContent = short(month);
+    $('t-avg').textContent = short(active.length ? total / active.length : 0);
+    $('t-best').textContent = short(best);
+    $('t-bestd').textContent = 'Best day · ' + parse(bestK).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    $('t-streak').textContent = streak;
+
+    drawBars(); drawDonut(tot); drawHours(); facts(tot, total, keys.length);
+  };
+
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+    range = b.dataset.r; if (data) drawBars();
+  });
+  $('reset').onclick = () => { if (confirm('Reset all click stats? This cannot be undone.')) send('reset'); };
+  document.addEventListener('contextmenu', e => e.preventDefault());
+  send('ready');
+</script>
+</body>
+</html>
