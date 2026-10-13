@@ -330,9 +330,11 @@ fn main() {
         Err(e) => (Config::default(), Some(e)),
     };
     let mut stats = clicks::Stats::load();
-    clicks::set_enabled(cfg.count_clicks);
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    // After the event loop: tao registers its own raw mouse input on creation,
+    // and Windows keeps only the last registration per process.
+    clicks::set_enabled(cfg.count_clicks);
 
     let proxy = event_loop.create_proxy();
     TrayIconEvent::set_event_handler(Some(move |e| {

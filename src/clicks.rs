@@ -129,11 +129,33 @@ mod imp {
         GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER, RID_INPUT, RIDEV_INPUTSINK,
         RIM_TYPEMOUSE, RegisterRawInputDevices,
     };
+    use windows_sys::Win32::UI::Input::{GetRegisteredRawInputDevices};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, HWND_MESSAGE, MSG, RI_MOUSE_BUTTON_4_DOWN,
         RI_MOUSE_BUTTON_5_DOWN, RI_MOUSE_LEFT_BUTTON_DOWN, RI_MOUSE_MIDDLE_BUTTON_DOWN, RI_MOUSE_RIGHT_BUTTON_DOWN,
-        RI_MOUSE_WHEEL, RegisterClassW, WM_INPUT, WNDCLASSW,
+        RI_MOUSE_WHEEL, RegisterClassW, SetTimer, WM_INPUT, WM_TIMER, WNDCLASSW,
     };
+
+    /// Route the system mouse's raw input to `hwnd`, even in the background.
+    /// Only one target per process wins, so this is re-asserted periodically
+    /// in case a library (e.g. the windowing toolkit) registered its own.
+    fn register(hwnd: HWND) {
+        unsafe {
+            // Already ours? Skip the call.
+            let mut list: [RAWINPUTDEVICE; 16] = std::mem::zeroed();
+            let mut n = list.len() as u32;
+            let got = GetRegisteredRawInputDevices(list.as_mut_ptr(), &mut n, std::mem::size_of::<RAWINPUTDEVICE>() as u32);
+            if got != u32::MAX
+                && list[..got as usize]
+                    .iter()
+                    .any(|d| d.usUsagePage == 0x01 && d.usUsage == 0x02 && d.hwndTarget == hwnd && d.dwFlags & RIDEV_INPUTSINK != 0)
+            {
+                return;
+            }
+            let dev = RAWINPUTDEVICE { usUsagePage: 0x01, usUsage: 0x02, dwFlags: RIDEV_INPUTSINK, hwndTarget: hwnd };
+            RegisterRawInputDevices(&dev, 1, std::mem::size_of::<RAWINPUTDEVICE>() as u32);
+        }
+    }
 
     pub fn local_now() -> (String, usize) {
         let mut t: SYSTEMTIME = unsafe { std::mem::zeroed() };
@@ -151,6 +173,10 @@ mod imp {
     }
 
     unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+        if msg == WM_TIMER {
+            register(hwnd);
+            return 0;
+        }
         if msg == WM_INPUT {
             let mut raw: RAWINPUT = unsafe { std::mem::zeroed() };
             let mut size = std::mem::size_of::<RAWINPUT>() as u32;
@@ -216,8 +242,8 @@ mod imp {
             if hwnd.is_null() {
                 return;
             }
-            let dev = RAWINPUTDEVICE { usUsagePage: 0x01, usUsage: 0x02, dwFlags: RIDEV_INPUTSINK, hwndTarget: hwnd };
-            RegisterRawInputDevices(&dev, 1, std::mem::size_of::<RAWINPUTDEVICE>() as u32);
+            register(hwnd);
+            SetTimer(hwnd, 1, 30_000, None);
             let mut msg: MSG = std::mem::zeroed();
             while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
                 DispatchMessageW(&msg);
