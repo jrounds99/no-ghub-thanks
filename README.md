@@ -3,6 +3,8 @@
 <img src="assets/app.png" width="96" align="right" alt="">
 
 > Logitech G HUB is annoying. I wanted some of the features but none of the bloatware. Created and tested for the G502 X.
+> Non-intrusive system tray app, very simple and lightweight. Stats if you want them!
+>
 > — jrounds99
 
 ## What it is
