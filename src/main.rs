@@ -7,6 +7,7 @@ mod config;
 mod device;
 mod hidpp;
 mod icon;
+mod onboard;
 mod platform;
 mod updater;
 
@@ -27,7 +28,8 @@ use wry::WebView;
 const APP_NAME: &str = env!("APP_DISPLAY_NAME");
 
 enum UserEvent {
-    Status(Option<Status>),
+    Device(device::Event),
+    Mouse(String),
     Tray(TrayIconEvent),
     Menu(MenuEvent),
     Ui(String),
@@ -65,6 +67,8 @@ struct UiMsg {
     period: f64,
     #[serde(default)]
     commit: bool,
+    #[serde(default)]
+    profiles: Vec<onboard::Profile>,
 }
 
 const WIDTH: f64 = 340.0;
@@ -205,6 +209,78 @@ fn spawn_install(proxy: EventLoopProxy<UserEvent>, a: updater::Available) {
     });
 }
 
+fn open_mouse_window(
+    target: &EventLoopWindowTarget<UserEvent>,
+    proxy: EventLoopProxy<UserEvent>,
+) -> Option<(Window, WebView)> {
+    let window = WindowBuilder::new()
+        .with_title(format!("{APP_NAME} — Mouse settings"))
+        .with_window_icon(app_icon())
+        .with_inner_size(LogicalSize::new(860.0, 900.0))
+        .with_min_inner_size(LogicalSize::new(760.0, 600.0))
+        .build(target)
+        .ok()?;
+    let webview = wry::WebViewBuilder::new()
+        .with_html(include_str!("mouse.html"))
+        .with_background_color(webview_bg())
+        .with_ipc_handler(move |req| {
+            let _ = proxy.send_event(UserEvent::Mouse(req.body().clone()));
+        })
+        .build(&window)
+        .ok()?;
+    Some((window, webview))
+}
+
+fn backups_dir() -> std::path::PathBuf {
+    Config::dir().join("backups")
+}
+
+/// Newest first: (file name, label).
+fn list_backups() -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = std::fs::read_dir(backups_dir())
+        .map(|it| {
+            it.flatten()
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    let label = name.strip_prefix("onboard ")?.strip_suffix(".json")?.to_string();
+                    let label = match label.split_once(' ') {
+                        Some((d, t)) => format!("{d} at {}", t.replacen('-', ":", 2)),
+                        None => label,
+                    };
+                    Some((name, label))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort_by(|a, b| b.0.cmp(&a.0));
+    v
+}
+
+/// Sectors from a backup file that belong in user memory (directory + profiles).
+fn load_backup(name: &str) -> Result<Vec<(u16, Vec<u8>)>, String> {
+    if name.contains(['/', '\\']) || name.contains("..") {
+        return Err("bad backup name".into());
+    }
+    let text = std::fs::read_to_string(backups_dir().join(name)).map_err(|e| e.to_string())?;
+    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for (k, hexs) in v["sectors"].as_object().ok_or("backup has no sectors")? {
+        let sec = u16::from_str_radix(k, 16).map_err(|_| "bad sector id")?;
+        if sec >= 0x0100 {
+            continue; // ROM: read-only
+        }
+        let bytes = onboard::unhex(hexs.as_str().unwrap_or("")).ok_or("bad sector data")?;
+        if onboard::crc_ok(&bytes) {
+            out.push((sec, bytes));
+        }
+    }
+    out.sort_by_key(|(s, _)| *s);
+    if out.is_empty() {
+        return Err("backup contains no valid sectors".into());
+    }
+    Ok(out)
+}
+
 fn main() {
     // After a self-update the new exe starts while the old one is still
     // shutting down: wait (briefly) for it to release the instance lock.
@@ -247,8 +323,8 @@ fn main() {
     let proxy = event_loop.create_proxy();
     let initial = light_of(&cfg);
     std::thread::spawn(move || {
-        device::run(rx, initial, move |s| {
-            let _ = proxy.send_event(UserEvent::Status(s));
+        device::run(rx, initial, move |e| {
+            let _ = proxy.send_event(UserEvent::Device(e));
         })
     });
 
@@ -288,12 +364,14 @@ fn main() {
     let light_i = CheckMenuItem::new("Lighting", true, cfg.lighting_enabled, None);
     let count_i = CheckMenuItem::new("Count clicks", true, cfg.count_clicks, None);
     let stats_i = MenuItem::new("Click stats…", true, None);
+    let mouse_i = MenuItem::new("Mouse settings…", true, None);
     let auto_i = CheckMenuItem::new("Start with Windows", true, platform::autostart_enabled(), None);
     let edit_i = MenuItem::new("Edit profiles…", true, None);
     let quit_i = MenuItem::new("Quit", true, None);
     let menu = Menu::new();
     let _ = menu.append_items(&[
         &open_i,
+        &mouse_i,
         &stats_i,
         &PredefinedMenuItem::separator(),
         &light_i,
@@ -312,6 +390,9 @@ fn main() {
     let mut pin_tries = if cfg.always_show_in_tray { PIN_ATTEMPTS } else { 0 };
     let mut cleaned_old = false;
     let mut stats_win: Option<(Window, WebView)> = None;
+    let mouse_proxy = event_loop.create_proxy();
+    let mut mouse_win: Option<(Window, WebView)> = None;
+    let mut mouse_ready = false;
     let mut stats_ready = false;
 
     let mut tray: Option<TrayIcon> = None;
@@ -493,7 +574,65 @@ fn main() {
                 refresh_ui = true;
             }
 
-            Event::UserEvent(UserEvent::Status(s)) => {
+            Event::UserEvent(UserEvent::Device(device::Event::Onboard(r))) => {
+                if let (Some((_, wv)), true) = (&mouse_win, mouse_ready) {
+                    let js = match r {
+                        Ok(d) => format!("onboard({})", serde_json::json!({ "ok": true, "data": d })),
+                        Err(e) => format!("onboard({})", serde_json::json!({ "ok": false, "error": e })),
+                    };
+                    let _ = wv.evaluate_script(&js);
+                }
+            }
+
+            Event::UserEvent(UserEvent::Device(device::Event::Wrote(r))) => {
+                if let (Some((_, wv)), true) = (&mouse_win, mouse_ready) {
+                    let js = match r {
+                        Ok(m) => format!("wrote({})", serde_json::json!({ "ok": true, "msg": m })),
+                        Err(e) => format!("wrote({})", serde_json::json!({ "ok": false, "error": e })),
+                    };
+                    let _ = wv.evaluate_script(&js);
+                }
+            }
+
+            Event::UserEvent(UserEvent::Mouse(body)) => {
+                if let Ok(msg) = serde_json::from_str::<UiMsg>(&body) {
+                    let page = |js: String| {
+                        if let Some((_, wv)) = &mouse_win {
+                            let _ = wv.evaluate_script(&js);
+                        }
+                    };
+                    match msg.cmd.as_str() {
+                        "ready" => {
+                            mouse_ready = true;
+                            page(format!("accent({})", serde_json::json!(platform::accent_color())));
+                            let _ = tx.send(Cmd::ReadOnboard);
+                        }
+                        "save" => {
+                            let _ = tx.send(Cmd::WriteOnboard { profiles: msg.profiles, active: (msg.value as u8).max(1) });
+                        }
+                        "backups" => {
+                            let list: Vec<_> = list_backups()
+                                .into_iter()
+                                .map(|(name, label)| serde_json::json!({ "name": name, "label": label }))
+                                .collect();
+                            page(format!("backups({})", serde_json::Value::Array(list)));
+                        }
+                        "restore" => match load_backup(&msg.name) {
+                            Ok(sectors) => {
+                                let _ = tx.send(Cmd::Restore(sectors));
+                            }
+                            Err(e) => page(format!("wrote({})", serde_json::json!({ "ok": false, "error": e }))),
+                        },
+                        "open_backups" => {
+                            let _ = std::fs::create_dir_all(backups_dir());
+                            let _ = std::process::Command::new("explorer").arg(backups_dir()).spawn();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            Event::UserEvent(UserEvent::Device(device::Event::Status(s))) => {
                 if let Some(st) = &s {
                     if st.charging {
                         low_alerted = false;
@@ -539,6 +678,13 @@ fn main() {
                     window.set_visible(true);
                     window.set_focus();
                     refresh_ui = true;
+                } else if e.id == *mouse_i.id() {
+                    if mouse_win.is_none() {
+                        mouse_win = open_mouse_window(target, mouse_proxy.clone());
+                        mouse_ready = false;
+                    } else if let Some((w, _)) = &mouse_win {
+                        w.set_focus();
+                    }
                 } else if e.id == *stats_i.id() {
                     if stats_win.is_none() {
                         stats_win = open_stats_window(target, stats_proxy.clone());
@@ -618,6 +764,16 @@ fn main() {
                             cfg.save();
                             refresh_ui = true;
                             refresh_stats = true;
+                        }
+                        "mouse" => {
+                            window.set_visible(false);
+                            hidden_at = Instant::now();
+                            if mouse_win.is_none() {
+                                mouse_win = open_mouse_window(target, mouse_proxy.clone());
+                                mouse_ready = false;
+                            } else if let Some((w, _)) = &mouse_win {
+                                w.set_focus();
+                            }
                         }
                         "stats" => {
                             window.set_visible(false);
@@ -750,6 +906,11 @@ fn main() {
                     if let WindowEvent::Focused(false) = event {
                         window.set_visible(false);
                         hidden_at = Instant::now();
+                    }
+                } else if mouse_win.as_ref().is_some_and(|(w, _)| w.id() == window_id) {
+                    if let WindowEvent::CloseRequested = event {
+                        mouse_win = None;
+                        mouse_ready = false;
                     }
                 } else if stats_win.as_ref().is_some_and(|(w, _)| w.id() == window_id) {
                     if let WindowEvent::CloseRequested = event {

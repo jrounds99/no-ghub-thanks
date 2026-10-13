@@ -177,6 +177,13 @@
 
   <div class="card">
     <div class="row">
+      <div><div class="label">Mouse settings</div><div class="sub">DPI, buttons, report rate, onboard profiles</div></div>
+      <a class="statlink" id="mouse" style="margin:0">Open ›</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
       <div><div class="label">Click counter</div><div class="sub" id="csub">Off</div></div>
       <label class="switch"><input type="checkbox" id="clicks"><span></span></label>
     </div>
@@ -318,6 +325,7 @@
 
   $('clicks').onchange = e => send('clicks', { on: e.target.checked });
   $('stats').onclick = () => send('stats');
+  $('mouse').onclick = () => send('mouse');
   $('check').onclick = () => send('check_update');
   $('updbtn').onclick = () => send('install_update');
   $('edit').onclick = () => send('open_file');

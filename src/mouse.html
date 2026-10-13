@@ -1,0 +1,352 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --accent: #3b82f6;
+    --bg: #f3f3f3; --card: #fff; --text: #1b1b1b; --muted: #666; --line: rgba(0,0,0,.09); --chip: #f7f7f7; --track: rgba(0,0,0,.1);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1c1c1c; --card: #272727; --text: #f2f2f2; --muted: #a3a3a3; --line: rgba(255,255,255,.09); --chip: #303030; --track: rgba(255,255,255,.12); color-scheme: dark; }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; padding: 18px 18px 84px; user-select: none; }
+  h2 { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 12px; }
+  .grad { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #8b5cf6)); color: #fff; }
+
+  .top { display: flex; align-items: center; gap: 12px; }
+  .top h1 { font: 600 20px "Segoe UI Variable Display", "Segoe UI", sans-serif; flex: 1; }
+  .slots { display: flex; gap: 6px; margin-top: 14px; }
+  .slot { flex: 1; border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 9px 10px; cursor: pointer; text-align: left; font: inherit; color: var(--text); position: relative; }
+  .slot.off { opacity: .55; }
+  .slot.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .slot b { display: block; font-size: 13px; }
+  .slot .sub { font-size: 11px; }
+  .slot .live { position: absolute; top: 8px; right: 9px; font-size: 10px; padding: 1px 6px; border-radius: 99px; }
+
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .seg { display: inline-grid; grid-auto-flow: column; gap: 3px; background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 3px; }
+  .seg button { border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; padding: 4px 12px; border-radius: 6px; cursor: pointer; }
+  .seg button.on { color: #fff; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #8b5cf6)); }
+
+  .dpi { display: grid; grid-template-columns: 26px 1fr 84px 66px 66px; gap: 8px 12px; align-items: center; }
+  .dpi .h { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .dpi .n { color: var(--muted); }
+  input[type=range] { -webkit-appearance: none; width: 100%; height: 4px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent) var(--v, 0%), var(--track) var(--v, 0%)); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--card); border: 4px solid var(--accent); }
+  input[type=number], select, .keycap { font: inherit; font-size: 12px; color: var(--text); background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px; width: 100%; }
+  input[type=radio] { accent-color: var(--accent); width: 15px; height: 15px; }
+  .pill { font-size: 11px; padding: 1px 7px; border-radius: 99px; }
+  .pill.def { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  .pill.sh { background: color-mix(in srgb, #f97316 18%, transparent); color: #f97316; }
+
+  .btns { display: grid; grid-template-columns: 150px 1fr 1fr; gap: 6px 12px; align-items: center; }
+  .btns .h { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .act { display: flex; gap: 6px; }
+  .act select:first-child { flex: 1.1; }
+  .act > :nth-child(2) { flex: 1; }
+  .keycap { cursor: pointer; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .keycap.rec { border-color: var(--accent); color: var(--accent); }
+  .gs-off .gs { opacity: .4; }
+
+  .light { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  input[type=color] { -webkit-appearance: none; width: 36px; height: 26px; border: 1px solid var(--line); border-radius: 6px; padding: 0; background: none; cursor: pointer; }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; } input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
+
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 18px; display: flex; gap: 10px; align-items: center;
+         background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
+  .bar .msg { flex: 1; color: var(--muted); font-size: 12px; }
+  .bar .msg.err { color: #e5484d; } .bar .msg.ok { color: #10b981; }
+  .b { border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: 12.5px; padding: 7px 14px; border-radius: 7px; cursor: pointer; }
+  .b.primary { border-color: transparent; color: #fff; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #8b5cf6)); }
+  .b:disabled { opacity: .5; cursor: default; }
+  .center { text-align: center; padding: 70px 0; color: var(--muted); }
+  .hidden { display: none !important; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: grid; place-items: center; }
+  .modal .card { width: 420px; max-height: 70vh; overflow: auto; }
+  .bk { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+  <div class="top">
+    <h1>Mouse settings</h1>
+    <span class="sub" id="dev"></span>
+  </div>
+
+  <div id="loading" class="center">Reading the mouse's onboard memory…</div>
+  <div id="error" class="center hidden"></div>
+
+  <div id="main" class="hidden">
+    <div class="slots" id="slots"></div>
+
+    <div class="card">
+      <div class="row">
+        <div><h2 style="margin:0">Profile <span id="pnum"></span></h2>
+          <div class="sub" id="pinfo"></div></div>
+        <div class="row" style="gap:14px">
+          <label class="row" style="gap:6px"><input type="checkbox" id="enabled"> Enabled</label>
+          <button class="b" id="makeactive">Make active</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row"><h2 style="margin:0">Report rate</h2>
+        <div class="seg" id="rate"><button data-v="125">125 Hz</button><button data-v="250">250 Hz</button><button data-v="500">500 Hz</button><button data-v="1000">1000 Hz</button></div></div>
+    </div>
+
+    <div class="card">
+      <h2>DPI levels</h2>
+      <div class="dpi" id="dpi"></div>
+      <div class="sub" style="margin-top:10px">Default is the level the mouse starts in. Sniper is what the DPI-shift button switches to while held.</div>
+    </div>
+
+    <div class="card" id="btncard">
+      <h2>Buttons</h2>
+      <div class="btns" id="btns"></div>
+      <div class="sub" style="margin-top:10px">G-shift actions apply while a button set to <b>G-shift</b> is held. Click a key box, then press the shortcut.</div>
+    </div>
+
+    <div class="card">
+      <h2>Onboard lighting</h2>
+      <div class="sub" style="margin-bottom:10px">What the mouse shows when this app isn't running (before sign-in, on other PCs).</div>
+      <div class="light">
+        <div class="seg" id="lmode"><button data-v="off">Off</button><button data-v="static">Static</button><button data-v="breathe">Pulse</button><button data-v="cycle">Cycle</button><button data-v="other">Logitech default</button></div>
+        <input type="color" id="lcolor">
+        <label class="row" style="gap:8px" id="lspeedw"><span class="sub">Speed</span><input type="range" id="lspeed" min="1000" max="10000" step="250" style="width:140px"><span class="sub" id="lsval"></span></label>
+      </div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <div class="msg" id="msg">Changes are saved to the mouse's own memory and work on any PC.</div>
+    <button class="b" id="restore">Restore backup…</button>
+    <button class="b" id="revert" disabled>Revert</button>
+    <button class="b primary" id="save" disabled>Save to mouse</button>
+  </div>
+
+  <div class="modal hidden" id="modal"><div class="card">
+    <div class="row"><h2 style="margin:0">Restore a backup</h2><button class="b" id="mclose">Close</button></div>
+    <div class="sub" style="margin:6px 0 8px">A backup is taken automatically before every save. Restoring also backs up the current state first.</div>
+    <div id="bklist"></div>
+    <div style="margin-top:10px"><a class="sub" style="cursor:pointer;text-decoration:underline" id="openfolder">Open backups folder</a></div>
+  </div></div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const send = (cmd, extra) => window.ipc.postMessage(JSON.stringify(Object.assign({ cmd }, extra || {})));
+  const clone = x => JSON.parse(JSON.stringify(x));
+  let data = null, edit = null, sel = 1, recording = null;
+
+  // ---------- action vocabulary ----------
+  const SPECIAL = { 1: 'Tilt left', 2: 'Tilt right', 3: 'DPI up', 4: 'DPI down', 5: 'DPI cycle', 6: 'DPI default', 7: 'DPI shift (sniper)',
+    8: 'Next profile', 9: 'Previous profile', 10: 'Cycle profile', 11: 'G-shift', 12: 'Battery indicator', 16: 'Scroll down', 17: 'Scroll up' };
+  const MOUSE = { 1: 'Left click', 2: 'Right click', 3: 'Middle click', 4: 'Back', 5: 'Forward' };
+  const MEDIA = { 0xCD: 'Play / pause', 0xB5: 'Next track', 0xB6: 'Previous track', 0xB7: 'Stop', 0xE9: 'Volume up', 0xEA: 'Volume down', 0xE2: 'Mute',
+    0x192: 'Calculator', 0x194: 'File explorer', 0x223: 'Browser home', 0x224: 'Browser back', 0x225: 'Browser forward' };
+  const KIND_OPTIONS = [['mouse', 'Mouse button'], ['key', 'Keyboard shortcut'], ['media', 'Media / app'], ['special', 'Mouse function'], ['disabled', 'Disabled']];
+
+  // HID keyboard usage <-> KeyboardEvent.code
+  const KEYS = {};
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach((c, i) => KEYS['Key' + c] = 0x04 + i);
+  '1234567890'.split('').forEach((c, i) => KEYS['Digit' + c] = 0x1E + i);
+  Object.assign(KEYS, { Enter: 0x28, Escape: 0x29, Backspace: 0x2A, Tab: 0x2B, Space: 0x2C, Minus: 0x2D, Equal: 0x2E, BracketLeft: 0x2F,
+    BracketRight: 0x30, Backslash: 0x31, Semicolon: 0x33, Quote: 0x34, Backquote: 0x35, Comma: 0x36, Period: 0x37, Slash: 0x38, CapsLock: 0x39,
+    PrintScreen: 0x46, ScrollLock: 0x47, Pause: 0x48, Insert: 0x49, Home: 0x4A, PageUp: 0x4B, Delete: 0x4C, End: 0x4D, PageDown: 0x4E,
+    ArrowRight: 0x4F, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52, NumLock: 0x53, NumpadDivide: 0x54, NumpadMultiply: 0x55,
+    NumpadSubtract: 0x56, NumpadAdd: 0x57, NumpadEnter: 0x58, NumpadDecimal: 0x63, ContextMenu: 0x65 });
+  for (let i = 1; i <= 12; i++) KEYS['F' + i] = 0x39 + i;
+  for (let i = 13; i <= 24; i++) KEYS['F' + i] = 0x68 + i - 13;
+  for (let i = 1; i <= 9; i++) KEYS['Numpad' + i] = 0x58 + i;
+  KEYS.Numpad0 = 0x62;
+  const KEYNAME = {};
+  for (const [code, u] of Object.entries(KEYS)) KEYNAME[u] = code.replace(/^Key|^Digit/, '').replace('Arrow', '').replace('Bracket', '').replace('Numpad', 'Num ');
+  const MODS = { ControlLeft: 0x01, ShiftLeft: 0x02, AltLeft: 0x04, MetaLeft: 0x08, ControlRight: 0x10, ShiftRight: 0x20, AltRight: 0x40, MetaRight: 0x80 };
+  function keyLabel(a) {
+    if (!a.modifiers && !a.key) return 'Press a key…';
+    const m = a.modifiers, parts = [];
+    if (m & 0x11) parts.push('Ctrl'); if (m & 0x22) parts.push('Shift'); if (m & 0x44) parts.push('Alt'); if (m & 0x88) parts.push('Win');
+    if (a.key) parts.push(KEYNAME[a.key] || ('0x' + a.key.toString(16)));
+    return parts.join(' + ');
+  }
+
+  function actionLabel(a) {
+    return a.kind === 'mouse' ? MOUSE[a.button] || 'Button ' + a.button : a.kind === 'key' ? keyLabel(a) : a.kind === 'media' ? MEDIA[a.code] || 'Media 0x' + a.code.toString(16)
+      : a.kind === 'special' ? SPECIAL[a.code] || 'Function ' + a.code : a.kind === 'disabled' ? 'Disabled' : 'Macro (kept as is)';
+  }
+
+  function opt(sel, value, text) { const o = document.createElement('option'); o.value = value; o.textContent = text; sel.append(o); return o; }
+
+  // One action editor: kind select + detail control.
+  function actionEditor(a, onChange) {
+    const wrap = document.createElement('div'); wrap.className = 'act';
+    if (a.kind === 'raw') {
+      const s = document.createElement('select'); opt(s, 'raw', 'Macro (kept as is)'); KIND_OPTIONS.forEach(([v, t]) => opt(s, v, t));
+      s.onchange = () => onChange(defaultFor(s.value)); wrap.append(s); return wrap;
+    }
+    const kind = document.createElement('select');
+    KIND_OPTIONS.forEach(([v, t]) => opt(kind, v, t)); kind.value = a.kind;
+    kind.onchange = () => onChange(defaultFor(kind.value));
+    wrap.append(kind);
+    if (a.kind === 'mouse' || a.kind === 'media' || a.kind === 'special') {
+      const d = document.createElement('select');
+      const table = a.kind === 'mouse' ? MOUSE : a.kind === 'media' ? MEDIA : SPECIAL;
+      for (const [v, t] of Object.entries(table)) opt(d, v, t);
+      const cur = a.kind === 'mouse' ? a.button : a.code;
+      if (!(cur in table)) opt(d, cur, actionLabel(a));
+      d.value = cur;
+      d.onchange = () => onChange(a.kind === 'mouse' ? { kind: 'mouse', button: +d.value } : { kind: a.kind, code: +d.value });
+      wrap.append(d);
+    } else if (a.kind === 'key') {
+      const k = document.createElement('div'); k.className = 'keycap'; k.textContent = keyLabel(a); k.tabIndex = 0;
+      k.onclick = () => { if (recording) recording.el.classList.remove('rec'); recording = { el: k, set: v => onChange(v), mods: 0 };
+        k.classList.add('rec'); k.textContent = 'Press keys…'; k.focus(); };
+      wrap.append(k);
+    } else {
+      wrap.append(document.createElement('span'));
+    }
+    return wrap;
+  }
+  function defaultFor(kind) {
+    return kind === 'mouse' ? { kind, button: 1 } : kind === 'key' ? { kind, modifiers: 0, key: 0 } : kind === 'media' ? { kind, code: 0xCD }
+      : kind === 'special' ? { kind, code: 3 } : { kind: 'disabled' };
+  }
+
+  document.addEventListener('keydown', e => {
+    if (!recording) return;
+    e.preventDefault();
+    if (e.code in MODS) { recording.mods |= MODS[e.code]; recording.el.textContent = keyLabel({ modifiers: recording.mods, key: 0 }) + ' + …'; return; }
+    if (e.code === 'Escape' && !recording.mods) { const r = recording; recording = null; r.el.classList.remove('rec'); render(); return; }
+    const key = KEYS[e.code];
+    if (!key) return;
+    const r = recording; recording = null; r.el.classList.remove('rec');
+    r.set({ kind: 'key', modifiers: r.mods, key });
+  });
+  document.addEventListener('keyup', e => {
+    // A modifier pressed and released on its own = bind just that modifier.
+    if (recording && e.code in MODS && recording.mods && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+      const r = recording; recording = null; r.el.classList.remove('rec');
+      r.set({ kind: 'key', modifiers: r.mods, key: 0 });
+    }
+  });
+
+  // ---------- rendering ----------
+  const prof = () => edit.profiles.find(p => p.slot === sel);
+  const dirty = () => JSON.stringify(edit) !== JSON.stringify(strip(data));
+  function strip(d) { return { profiles: d.profiles, active: d.active }; }
+  function changed() { $('save').disabled = !dirty(); $('revert').disabled = !dirty(); render(); }
+  function setMsg(t, cls) { $('msg').textContent = t; $('msg').className = 'msg ' + (cls || ''); }
+
+  function render() {
+    if (!edit) return;
+    $('slots').replaceChildren(...edit.profiles.map(p => {
+      const b = document.createElement('button');
+      b.className = 'slot' + (p.enabled ? '' : ' off') + (p.slot === sel ? ' sel' : '');
+      b.innerHTML = `<b>Profile ${p.slot}</b><span class="sub">${p.enabled ? p.dpi[p.default_dpi] + ' DPI · ' + p.report_rate_hz + ' Hz' : 'Disabled'}</span>`;
+      if (p.slot === edit.active) { const l = document.createElement('span'); l.className = 'live grad'; l.textContent = 'Active'; b.append(l); }
+      b.onclick = () => { sel = p.slot; render(); };
+      return b;
+    }));
+    const p = prof();
+    $('pnum').textContent = p.slot;
+    $('pinfo').textContent = (p.slot === edit.active ? 'Active on the mouse now' : 'Not active') + (p.from_rom ? ' · factory settings (never customized)' : '');
+    $('enabled').checked = p.enabled;
+    $('makeactive').disabled = p.slot === edit.active || !p.enabled;
+
+    document.querySelectorAll('#rate button').forEach(b => b.classList.toggle('on', +b.dataset.v === p.report_rate_hz));
+
+    const dpi = $('dpi'); dpi.replaceChildren();
+    ['#', 'Level', 'DPI', 'Default', 'Sniper'].forEach(h => { const e = document.createElement('div'); e.className = 'h'; e.textContent = h; dpi.append(e); });
+    p.dpi.forEach((v, i) => {
+      const n = document.createElement('div'); n.className = 'n'; n.textContent = i + 1;
+      const r = document.createElement('input'); r.type = 'range'; r.min = 100; r.max = 25600; r.step = 50; r.value = v;
+      const setv = x => r.style.setProperty('--v', ((x - 100) / 25500 * 100) + '%'); setv(v);
+      const num = document.createElement('input'); num.type = 'number'; num.min = 100; num.max = 25600; num.step = 50; num.value = v;
+      r.oninput = () => { num.value = r.value; setv(r.value); };
+      r.onchange = () => { p.dpi[i] = +r.value; changed(); };
+      num.onchange = () => { let x = Math.round(Math.min(25600, Math.max(100, +num.value || 100)) / 50) * 50; p.dpi[i] = x; changed(); };
+      const d = document.createElement('label'); d.innerHTML = `<input type="radio" name="def" ${p.default_dpi === i ? 'checked' : ''}>`;
+      d.firstChild.onchange = () => { p.default_dpi = i; changed(); };
+      const s = document.createElement('label'); s.innerHTML = `<input type="radio" name="sh" ${p.shift_dpi === i ? 'checked' : ''}>`;
+      s.firstChild.onchange = () => { p.shift_dpi = i; changed(); };
+      dpi.append(n, r, num, d, s);
+    });
+
+    const hasG = p.buttons.some(a => a.kind === 'special' && a.code === 11);
+    const btns = $('btns'); btns.replaceChildren();
+    $('btncard').classList.toggle('gs-off', !hasG);
+    ['Button', 'Action', 'With G-shift held'].forEach(h => { const e = document.createElement('div'); e.className = 'h'; e.textContent = h; btns.append(e); });
+    data.button_names.forEach((name, i) => {
+      const l = document.createElement('div'); l.textContent = name;
+      const a = actionEditor(p.buttons[i], v => { p.buttons[i] = v; changed(); });
+      const g = actionEditor(p.gshift[i], v => { p.gshift[i] = v; changed(); }); g.classList.add('gs');
+      btns.append(l, a, g);
+    });
+
+    const L = p.lighting;
+    document.querySelectorAll('#lmode button').forEach(b => b.classList.toggle('on', b.dataset.v === L.mode));
+    $('lcolor').classList.toggle('hidden', !(L.mode === 'static' || L.mode === 'breathe'));
+    $('lspeedw').classList.toggle('hidden', !(L.mode === 'breathe' || L.mode === 'cycle'));
+    if (L.color) $('lcolor').value = L.color.toLowerCase();
+    if (L.period_ms) { $('lspeed').value = L.period_ms; $('lsval').textContent = (L.period_ms / 1000).toFixed(1) + 's'; }
+    document.querySelector('#lmode [data-v=other]').classList.toggle('hidden', !(data.profiles.find(x => x.slot === sel).lighting.mode === 'other'));
+  }
+
+  // ---------- events ----------
+  document.querySelectorAll('#rate button').forEach(b => b.onclick = () => { prof().report_rate_hz = +b.dataset.v; changed(); });
+  $('enabled').onchange = e => { prof().enabled = e.target.checked; if (!e.target.checked && edit.active === sel) edit.active = edit.profiles.find(p => p.enabled)?.slot || 1; changed(); };
+  $('makeactive').onclick = () => { edit.active = sel; changed(); };
+  document.querySelectorAll('#lmode button').forEach(b => b.onclick = () => {
+    const p = prof(), c = p.lighting.color || '#FFFFFF', per = p.lighting.period_ms || 3000;
+    p.lighting = b.dataset.v === 'off' ? { mode: 'off' } : b.dataset.v === 'static' ? { mode: 'static', color: c }
+      : b.dataset.v === 'breathe' ? { mode: 'breathe', color: c, period_ms: per } : b.dataset.v === 'cycle' ? { mode: 'cycle', period_ms: Math.max(per, 1000) }
+      : clone(data.profiles.find(x => x.slot === sel).lighting);
+    changed();
+  });
+  $('lcolor').onchange = e => { prof().lighting.color = e.target.value.toUpperCase(); changed(); };
+  $('lspeed').oninput = e => { $('lsval').textContent = (e.target.value / 1000).toFixed(1) + 's'; };
+  $('lspeed').onchange = e => { prof().lighting.period_ms = +e.target.value; changed(); };
+  $('save').onclick = () => { $('save').disabled = true; setMsg('Writing to the mouse…'); send('save', { profiles: edit.profiles, value: edit.active }); };
+  $('revert').onclick = () => { edit = clone(strip(data)); changed(); setMsg('Reverted.'); };
+  $('restore').onclick = () => send('backups');
+  $('mclose').onclick = () => $('modal').classList.add('hidden');
+  $('openfolder').onclick = () => send('open_backups');
+
+  // ---------- from the app ----------
+  window.onboard = r => {
+    $('loading').classList.add('hidden');
+    if (!r.ok) {
+      if (!data) { $('error').textContent = r.error; $('error').classList.remove('hidden'); }
+      else setMsg(r.error, 'err');
+      return;
+    }
+    $('error').classList.add('hidden'); $('main').classList.remove('hidden');
+    data = r.data; edit = clone(strip(data));
+    if (!edit.profiles.some(p => p.slot === sel)) sel = data.active;
+    $('dev').textContent = `${data.profiles.length} onboard profiles · ${data.descriptor.button_count} buttons`;
+    changed();
+  };
+  window.wrote = r => { setMsg(r.ok ? r.msg + '. A backup of the previous settings was saved.' : r.error, r.ok ? 'ok' : 'err'); if (!r.ok) changed(); };
+  window.backups = list => {
+    const el = $('bklist'); el.replaceChildren();
+    if (!list.length) el.innerHTML = '<div class="sub">No backups yet. One is made automatically before the first save.</div>';
+    list.forEach(b => {
+      const row = document.createElement('div'); row.className = 'bk';
+      row.innerHTML = `<span>${b.label}</span>`;
+      const go = document.createElement('button'); go.className = 'b'; go.textContent = 'Restore';
+      go.onclick = () => { if (confirm('Write this backup to the mouse? Your current settings will be backed up first.')) { send('restore', { name: b.name }); $('modal').classList.add('hidden'); setMsg('Restoring…'); } };
+      row.append(go); el.append(row);
+    });
+    $('modal').classList.remove('hidden');
+  };
+  window.accent = c => document.documentElement.style.setProperty('--accent', c);
+  document.addEventListener('contextmenu', e => e.preventDefault());
+  send('ready');
+</script>
+</body>
+</html>

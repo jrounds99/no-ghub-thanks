@@ -95,6 +95,11 @@ pub fn local_now() -> (String, usize) {
     imp::local_now()
 }
 
+/// Local "YYYY-MM-DD HH-MM-SS" (file-name safe).
+pub fn local_stamp() -> String {
+    imp::local_stamp()
+}
+
 #[cfg(windows)]
 mod imp {
     use super::*;
@@ -115,6 +120,15 @@ mod imp {
         let mut t: SYSTEMTIME = unsafe { std::mem::zeroed() };
         unsafe { GetLocalTime(&mut t) };
         (format!("{:04}-{:02}-{:02}", t.wYear, t.wMonth, t.wDay), t.wHour as usize)
+    }
+
+    pub fn local_stamp() -> String {
+        let mut t: SYSTEMTIME = unsafe { std::mem::zeroed() };
+        unsafe { GetLocalTime(&mut t) };
+        format!(
+            "{:04}-{:02}-{:02} {:02}-{:02}-{:02}",
+            t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond
+        )
     }
 
     unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
@@ -212,6 +226,14 @@ mod imp {
         let m = if mp < 10 { mp + 3 } else { mp - 9 };
         let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
         (format!("{y:04}-{m:02}-{d:02}"), ((secs % 86400) / 3600) as usize)
+    }
+    pub fn local_stamp() -> String {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let (day, h) = local_now();
+        format!("{day} {h:02}-{:02}-{:02}", (secs / 60) % 60, secs % 60)
     }
     pub fn run() {}
 }

@@ -3,6 +3,8 @@
 
 use crate::config::{Effect, Profile, parse_color};
 use crate::hidpp::{self, Link};
+use crate::onboard::{self, Descriptor};
+use serde::Serialize;
 use hidapi::HidApi;
 use std::collections::HashSet;
 use std::sync::mpsc::Receiver;
@@ -20,7 +22,32 @@ pub struct Light {
 
 pub enum Cmd {
     Apply(Light),
+    /// Read the mouse's onboard profiles (sends `Event::Onboard`).
+    ReadOnboard,
+    /// Write edited profiles + enabled flags, then make `active` current.
+    WriteOnboard { profiles: Vec<onboard::Profile>, active: u8 },
+    /// Write raw sectors back (backup restore): ("0001", bytes)...
+    Restore(Vec<(u16, Vec<u8>)>),
     Quit,
+}
+
+pub enum Event {
+    Status(Option<Status>),
+    /// Ok(data) or an error message.
+    Onboard(Result<OnboardData, String>),
+    /// Result of a write/restore: Ok(summary) or error.
+    Wrote(Result<String, String>),
+}
+
+/// Everything the Mouse page needs, plus the raw sectors for backup.
+#[derive(Debug, Clone, Serialize)]
+pub struct OnboardData {
+    pub descriptor: Descriptor,
+    pub active: u8,
+    pub profiles: Vec<onboard::Profile>,
+    pub button_names: Vec<&'static str>,
+    /// Hex of every user sector read (directory + profiles), for backups.
+    pub raw: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -223,6 +250,166 @@ impl Session {
         }
     }
 
+    fn obp_index(&self) -> Result<u8, String> {
+        self.obp.ok_or_else(|| "this mouse has no onboard profiles".to_string())
+    }
+
+    fn descriptor(&mut self) -> Result<Descriptor, String> {
+        let o = self.obp_index()?;
+        let r = self.link.request(o, onboard::FN_INFO, &[]).map_err(err)?;
+        Ok(Descriptor::parse(&r))
+    }
+
+    fn read_sector(&mut self, sector: u16, size: usize) -> Result<Vec<u8>, String> {
+        let o = self.obp_index()?;
+        let mut data = vec![0u8; size];
+        let mut off = 0;
+        while off < size {
+            let at = off.min(size - 16);
+            let p = [(sector >> 8) as u8, sector as u8, (at >> 8) as u8, at as u8];
+            let r = self.link.request(o, onboard::FN_READ, &p).map_err(err)?;
+            data[at..at + 16].copy_from_slice(&r[..16]);
+            off += 16;
+        }
+        Ok(data)
+    }
+
+    /// Write a full sector, then read it back and compare.
+    fn write_sector(&mut self, sector: u16, data: &[u8]) -> Result<(), String> {
+        let o = self.obp_index()?;
+        let n = data.len();
+        let start = [(sector >> 8) as u8, sector as u8, 0, 0, (n >> 8) as u8, n as u8];
+        self.link.request(o, onboard::FN_WRITE_START, &start).map_err(err)?;
+        for chunk in data.chunks(16) {
+            let mut c = [0xFFu8; 16];
+            c[..chunk.len()].copy_from_slice(chunk);
+            self.link.request(o, onboard::FN_WRITE, &c).map_err(err)?;
+        }
+        self.link.request(o, onboard::FN_WRITE_END, &[]).map_err(err)?;
+        let back = self.read_sector(sector, n)?;
+        if back != data {
+            return Err(format!("sector {sector:#06x} did not verify after writing"));
+        }
+        Ok(())
+    }
+
+    fn active_profile(&mut self) -> Result<u8, String> {
+        let o = self.obp_index()?;
+        let r = self.link.request(o, onboard::FN_GET_PROFILE, &[]).map_err(err)?;
+        Ok(r[1].max(1))
+    }
+
+    fn set_active_profile(&mut self, slot: u8) -> Result<(), String> {
+        let o = self.obp_index()?;
+        self.link.request(o, onboard::FN_SET_PROFILE, &[0x00, slot]).map_err(err)?;
+        Ok(())
+    }
+
+    fn read_onboard(&mut self) -> Result<OnboardData, String> {
+        let d = self.descriptor()?;
+        if d.profile_format != 0x05 {
+            return Err(format!(
+                "onboard profile format {:#04x} isn't supported yet (built for the G502 X family)",
+                d.profile_format
+            ));
+        }
+        let size = d.sector_size as usize;
+        let count = d.profile_count as usize;
+        let mut raw = std::collections::BTreeMap::new();
+        let dir = self.read_sector(0x0000, size)?;
+        let enabled = if onboard::crc_ok(&dir) {
+            onboard::parse_directory(&dir, count)
+        } else {
+            vec![true; count.min(1)].into_iter().chain(std::iter::repeat(false)).take(count).collect()
+        };
+        raw.insert("0000".into(), onboard::hex(&dir));
+        let mut profiles = Vec::new();
+        for i in 0..count {
+            let slot = i as u8 + 1;
+            let user = self.read_sector(slot as u16, size)?;
+            raw.insert(format!("{:04X}", slot), onboard::hex(&user));
+            let (sector, from_rom) = if onboard::crc_ok(&user) {
+                (user, false)
+            } else {
+                // Unwritten user slot: show the factory profile it would fall back to.
+                let rom = 0x0100 + (i.min(d.rom_profile_count.saturating_sub(1) as usize) as u16) + 1;
+                (self.read_sector(rom, size)?, true)
+            };
+            profiles.push(onboard::Profile::parse(slot, enabled[i], &sector, from_rom));
+        }
+        let active = self.active_profile().unwrap_or(1);
+        Ok(OnboardData {
+            descriptor: d,
+            active,
+            profiles,
+            button_names: onboard::G502X_BUTTONS.to_vec(),
+            raw,
+        })
+    }
+
+    fn write_onboard(&mut self, profiles: &[onboard::Profile], active: u8, light: &Light) -> Result<String, String> {
+        let current = self.read_onboard()?;
+        // Always keep a backup of what was on the mouse before this write.
+        backup(&current)?;
+        let size = current.descriptor.sector_size as usize;
+        let mut written = 0;
+        for p in profiles {
+            let key = format!("{:04X}", p.slot);
+            let base = onboard::unhex(current.raw.get(&key).ok_or("unknown profile slot")?).unwrap_or_default();
+            // A slot that was never written starts from its factory profile.
+            let base = if onboard::crc_ok(&base) {
+                base
+            } else {
+                let rom = 0x0101 + (p.slot as u16 - 1).min(current.descriptor.rom_profile_count.saturating_sub(1) as u16);
+                self.read_sector(rom, size)?
+            };
+            let new = p.apply_to(&base)?;
+            if new != base {
+                self.write_sector(p.slot as u16, &new)?;
+                written += 1;
+            }
+        }
+        let mut enabled: Vec<bool> = current.profiles.iter().map(|p| p.enabled).collect();
+        for p in profiles {
+            if let Some(e) = enabled.get_mut(p.slot as usize - 1) {
+                *e = p.enabled;
+            }
+        }
+        if !enabled.iter().any(|&e| e) {
+            enabled[0] = true;
+        }
+        let dir_base = onboard::unhex(&current.raw["0000"]).unwrap_or_default();
+        let dir = onboard::directory(&enabled, size, onboard::crc_ok(&dir_base).then_some(dir_base.as_slice()));
+        if onboard::hex(&dir) != current.raw["0000"] {
+            self.write_sector(0x0000, &dir)?;
+            written += 1;
+        }
+        let active = if enabled.get(active as usize - 1).copied().unwrap_or(false) { active } else { 1 };
+        self.set_active_profile(active)?;
+        // Reloading a profile hands the LEDs back to firmware: take them again.
+        self.claimed = false;
+        let _ = self.apply(light);
+        Ok(if written == 0 { "Nothing changed".into() } else { format!("Saved to the mouse ({written} sector{})", if written == 1 { "" } else { "s" }) })
+    }
+
+    fn restore(&mut self, sectors: &[(u16, Vec<u8>)], light: &Light) -> Result<String, String> {
+        let current = self.read_onboard()?;
+        backup(&current)?;
+        let size = current.descriptor.sector_size as usize;
+        for (sec, data) in sectors {
+            if data.len() != size || !onboard::crc_ok(data) || !(*sec <= current.descriptor.profile_count as u16) {
+                return Err(format!("backup sector {sec:#06x} is not valid for this mouse"));
+            }
+        }
+        for (sec, data) in sectors {
+            self.write_sector(*sec, data)?;
+        }
+        let _ = self.set_active_profile(1);
+        self.claimed = false;
+        let _ = self.apply(light);
+        Ok(format!("Restored {} sectors", sectors.len()))
+    }
+
     /// Device came (back) online: rediscover, enforce lighting, read battery.
     fn bring_online(&mut self, light: &Light) -> hidpp::Result<()> {
         self.claimed = false;
@@ -233,6 +420,24 @@ impl Session {
         self.last_ping = Instant::now();
         Ok(())
     }
+}
+
+fn err(e: hidpp::Error) -> String {
+    match e {
+        hidpp::Error::Timeout => "the mouse didn't answer (asleep?)".into(),
+        hidpp::Error::Device(c) => format!("the mouse rejected the request (error {c:#04x})"),
+        hidpp::Error::Io(s) => s,
+    }
+}
+
+/// Save the raw onboard sectors to %APPDATA%\no-ghub-thanks\backups.
+pub fn backup(d: &OnboardData) -> Result<std::path::PathBuf, String> {
+    let dir = crate::config::Config::dir().join("backups");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("onboard {}.json", crate::clicks::local_stamp()));
+    let body = serde_json::json!({ "descriptor": d.descriptor, "sectors": d.raw });
+    std::fs::write(&path, serde_json::to_string_pretty(&body).unwrap()).map_err(|e| e.to_string())?;
+    Ok(path)
 }
 
 /// 3 = high, 2 = medium, 1 = low, 0 = charging, None = unknown.
@@ -310,7 +515,7 @@ fn new_session(link: Link) -> Session {
 }
 
 /// Run the worker on the current thread until `Cmd::Quit`.
-pub fn run(rx: Receiver<Cmd>, mut light: Light, emit: impl Fn(Option<Status>)) {
+pub fn run(rx: Receiver<Cmd>, mut light: Light, emit: impl Fn(Event)) {
     let mut api = loop {
         match HidApi::new() {
             Ok(a) => break a,
@@ -321,12 +526,14 @@ pub fn run(rx: Receiver<Cmd>, mut light: Light, emit: impl Fn(Option<Status>)) {
     let mut skip = HashSet::new();
     let mut last_scan = Instant::now() - RESCAN;
     let mut last_emit: Option<Option<Status>> = None;
+    let emit = &emit;
     let mut report = |s: Option<Status>| {
         if last_emit.as_ref() != Some(&s) {
-            emit(s.clone());
+            emit(Event::Status(s.clone()));
             last_emit = Some(s);
         }
     };
+    let offline = || "the mouse isn't connected right now".to_string();
 
     loop {
         // Commands from the tray.
@@ -337,6 +544,33 @@ pub fn run(rx: Receiver<Cmd>, mut light: Light, emit: impl Fn(Option<Status>)) {
                     light = l;
                     if let Some(s) = session.as_mut().filter(|s| s.online) {
                         let _ = s.apply(&light);
+                    }
+                }
+                Cmd::ReadOnboard => {
+                    let r = match session.as_mut().filter(|s| s.online) {
+                        Some(s) => s.read_onboard(),
+                        None => Err(offline()),
+                    };
+                    emit(Event::Onboard(r));
+                }
+                Cmd::WriteOnboard { profiles, active } => {
+                    let r = match session.as_mut().filter(|s| s.online) {
+                        Some(s) => s.write_onboard(&profiles, active, &light),
+                        None => Err(offline()),
+                    };
+                    emit(Event::Wrote(r));
+                    if let Some(s) = session.as_mut().filter(|s| s.online) {
+                        emit(Event::Onboard(s.read_onboard()));
+                    }
+                }
+                Cmd::Restore(sectors) => {
+                    let r = match session.as_mut().filter(|s| s.online) {
+                        Some(s) => s.restore(&sectors, &light),
+                        None => Err(offline()),
+                    };
+                    emit(Event::Wrote(r));
+                    if let Some(s) = session.as_mut().filter(|s| s.online) {
+                        emit(Event::Onboard(s.read_onboard()));
                     }
                 }
             }

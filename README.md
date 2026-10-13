@@ -22,8 +22,9 @@ What you get:
 - **Battery saver**: turn the lighting off below a battery level you choose.
 - **Always in the tray**: keeps the icon out of the overflow (^) menu.
 - **Updates**: checks this repo daily; one click (or fully automatic) to update, verified by SHA-256.
+- **Mouse settings** (the G HUB stuff that lives in the mouse): DPI levels, default and sniper DPI, report rate, button remapping, G-shift layer, onboard profiles, onboard lighting.
 
-What it deliberately doesn't do: macros, game detection, cloud profiles, firmware updates, or anything else that needs a resident service. Your DPI levels and button assignments stay as stored in the mouse's own onboard memory.
+What it deliberately doesn't do: macro recording, per-game profile switching, cloud sync, firmware updates, or anything else that needs a resident service. Existing macros on the mouse are preserved untouched.
 
 ### Compatibility
 
@@ -50,6 +51,19 @@ Windows 10/11 only (needs WebView2, which ships with Windows 11).
 - **Tray icon**: battery % with a level bar. Blue bar = charging. `--` = mouse asleep or not found. Hover for details.
 - **Panel** (left-click): battery, lighting switch, profile chips, brightness, Start with Windows. Follows your Windows light/dark mode and accent color.
 - **Lighting off** means off: it's re-applied every time the mouse connects or wakes, because the mouse falls back to its onboard lighting on every power cycle.
+
+## Mouse settings
+
+Panel → **Mouse settings ›** (or right-click the tray icon). Everything here is written to the mouse's own onboard memory, so it works on any PC and before Windows starts, with no software running.
+
+- **Profiles** — up to 5 onboard slots: enable/disable, choose which is active.
+- **Report rate** — 125 / 250 / 500 / 1000 Hz.
+- **DPI** — five levels (100–25,600), which one is the default, and which one the sniper (DPI-shift) button drops to.
+- **Buttons** — all 11 buttons plus wheel scroll up/down: mouse buttons, keyboard shortcuts (click the box and press the keys), media/app keys, DPI and profile functions, G-shift, or disabled.
+- **G-shift** — a second set of actions used while a button set to *G-shift* is held.
+- **Onboard lighting** — what the mouse shows when this app isn't running: off, static, pulse, cycle, or the Logitech default.
+
+Safety: before every save the current onboard memory is backed up to `%APPDATA%\no-ghub-thanks\backups`, each written sector is read back and verified, and **Restore backup…** writes any backup back. Only the fields you change are touched; everything else (including macros) is kept byte-for-byte. Supports the G502 X family's profile format; other mice get the tray features without this page.
 
 ## Settings (panel)
 
