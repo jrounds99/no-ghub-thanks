@@ -1,14 +1,32 @@
 # No G HUB Mouse Tray
 
-`no-ghub-thanks` — a tiny Windows tray app that replaces Logitech G HUB for the two things most people actually need:
+<img src="assets/app.png" width="96" align="right" alt="">
+
+> Logitech G HUB is annoying. I wanted some of the features but none of the bloatware. Created and tested for the G502 X.
+> — jrounds99
+
+## What it is
+
+`no-ghub-thanks` is a single small Windows exe that sits in the system tray and replaces Logitech G HUB for the things that actually matter day to day. It talks to the mouse directly; once it's running you can uninstall G HUB entirely: no background services, no updater, no account, no telemetry.
+
+What you get:
 
 - **Battery % in the system tray**, with a low-battery toast.
 - **Lighting control** — a master on/off switch that sticks across reboots, sleep/wake and cable swaps, plus lighting profiles (static, pulse, color cycle, battery-level color).
 - **Click counter** (optional, off by default) with a stats page: all-time odometer, daily / weekly / monthly charts, averages, best day, streaks, per-button split, time-of-day and some deeply unnecessary facts.
 
-It talks to the mouse directly over Logitech's HID++ 2.0 protocol. No services, no updater, no account, no telemetry. One ~2 MB exe.
+- **A clean panel** (left-click the tray icon) that follows your Windows light/dark mode and accent color.
 
-Built and tested against a **G502 X PLUS** over both the LIGHTSPEED receiver and the USB cable. Other HID++ 2.0 mice with `UNIFIED_BATTERY (0x1004)` and `RGB_EFFECTS (0x8071)` should work; mice without RGB still get the battery icon.
+What it deliberately doesn't do: macros, game detection, cloud profiles, firmware updates, or anything else that needs a resident service. Your DPI levels and button assignments stay as stored in the mouse's own onboard memory.
+
+### Compatibility
+
+Built and tested on a **G502 X PLUS**, over both the LIGHTSPEED receiver and the USB cable. It should also work with other Logitech HID++ 2.0 mice:
+
+- Mice with `UNIFIED_BATTERY (0x1004)` and `RGB_EFFECTS (0x8071)` get both battery and lighting.
+- Mice without RGB still get the battery icon.
+
+Windows 10/11 only (needs WebView2, which ships with Windows 11).
 
 ## Install
 
