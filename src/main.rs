@@ -93,8 +93,12 @@ fn config_mtime() -> Option<SystemTime> {
 }
 
 fn tooltip(status: Option<&Status>) -> String {
+    format!("{}\nv{}", tooltip_status(status), updater::VERSION)
+}
+
+fn tooltip_status(status: Option<&Status>) -> String {
     match status {
-        None => format!("{APP_NAME}\nNo Logitech mouse found"),
+        None => format!("{APP_NAME}: no Logitech mouse found"),
         Some(s) if !s.online => format!("{} — asleep", s.name),
         Some(s) => {
             let pct = s.percent.map(|p| format!("{p}%")).unwrap_or_else(|| "?".into());
