@@ -1,0 +1,56 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/no-ghub-thanks.exe dist/
+          (Get-FileHash dist/no-ghub-thanks.exe -Algorithm SHA256).Hash | Out-File -Encoding ascii dist/no-ghub-thanks.exe.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: no-ghub-thanks
+          path: dist/*
+
+      # Every push to main refreshes the rolling "latest" pre-release.
+      - name: Publish latest
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>$null
+          gh release create latest dist/* --prerelease --target $env:GITHUB_SHA `
+            --title "Latest build ($($env:GITHUB_SHA.Substring(0,7)))" `
+            --notes "Rolling build of main. For a stable version use the newest v* release."
+
+      # Version tags get a normal release.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create $env:GITHUB_REF_NAME dist/* --generate-notes
