@@ -240,7 +240,7 @@
     document.documentElement.style.setProperty('--accent', s.accent);
     $('name').textContent = s.name || 'Looking for your mouse…';
     const pill = !s.found ? 'Not found' : !s.online ? 'Asleep' :
-      (s.wired ? 'Wired' : 'Wireless') + (s.charging ? ' · Charging' : s.full ? ' · Full' : '');
+      (s.wired ? 'Wired' : 'Wireless') + (s.charging ? ' · Charging' : s.full ? ' · Full' : '') + (s.dpi ? ` · ${s.dpi} DPI` : '') + (s.live_profile ? ` · P${s.live_profile}` : '');
     $('pill').textContent = pill;
     const p = (s.online && s.percent != null) ? s.percent : null;
     $('pct').innerHTML = (p == null ? '--' : p) + '<small>%</small>';

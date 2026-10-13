@@ -28,6 +28,8 @@ pub enum Cmd {
     WriteOnboard { profiles: Vec<onboard::Profile>, active: u8 },
     /// Write raw sectors back (backup restore): ("0001", bytes)...
     Restore(Vec<(u16, Vec<u8>)>),
+    /// Report the live DPI level / active profile while a window shows them.
+    WatchDpi(bool),
     Quit,
 }
 
@@ -37,6 +39,8 @@ pub enum Event {
     Onboard(Result<OnboardData, String>),
     /// Result of a write/restore: Ok(summary) or error.
     Wrote(Result<String, String>),
+    /// Live position: active profile slot (1-based), DPI level index, DPI value.
+    Dpi { profile: u8, index: u8, dpi: Option<u16> },
 }
 
 /// Everything the Mouse page needs, plus the raw sectors for backup.
@@ -88,6 +92,8 @@ struct Session {
     applied_sig: Option<(Option<u8>, bool)>,
     /// LED pipeline already claimed from firmware on this connection.
     claimed: bool,
+    /// (profile, its 5 DPI levels) for the live DPI readout.
+    dpi_cache: Option<(u8, [u16; 5])>,
 }
 
 impl Session {
@@ -299,6 +305,26 @@ impl Session {
         Ok(r[1].max(1))
     }
 
+    /// (active profile, DPI level index, that level's DPI from the profile).
+    fn dpi_state(&mut self) -> Result<(u8, u8, Option<u16>), String> {
+        let o = self.obp_index()?;
+        let profile = self.active_profile()?;
+        let index = self.link.request(o, 0xB, &[]).map_err(err)?[0];
+        if self.dpi_cache.map(|(p, _)| p) != Some(profile) {
+            // Levels of the active profile, read once per profile switch.
+            let size = self.descriptor()?.sector_size as usize;
+            let sec = self.read_sector(profile as u16, size)?;
+            let levels = if onboard::crc_ok(&sec) {
+                std::array::from_fn(|i| u16::from_le_bytes([sec[3 + 2 * i], sec[4 + 2 * i]]))
+            } else {
+                [0; 5]
+            };
+            self.dpi_cache = Some((profile, levels));
+        }
+        let dpi = self.dpi_cache.and_then(|(_, l)| l.get(index as usize).copied()).filter(|&d| d > 0);
+        Ok((profile, index, dpi))
+    }
+
     fn set_active_profile(&mut self, slot: u8) -> Result<(), String> {
         let o = self.obp_index()?;
         self.link.request(o, onboard::FN_SET_PROFILE, &[0x00, slot]).map_err(err)?;
@@ -388,6 +414,7 @@ impl Session {
         self.set_active_profile(active)?;
         // Reloading a profile hands the LEDs back to firmware: take them again.
         self.claimed = false;
+        self.dpi_cache = None;
         let _ = self.apply(light);
         Ok(if written == 0 { "Nothing changed".into() } else { format!("Saved to the mouse ({written} sector{})", if written == 1 { "" } else { "s" }) })
     }
@@ -511,6 +538,7 @@ fn new_session(link: Link) -> Session {
         last_ping: Instant::now(),
         applied_sig: None,
         claimed: false,
+        dpi_cache: None,
     }
 }
 
@@ -534,6 +562,9 @@ pub fn run(rx: Receiver<Cmd>, mut light: Light, emit: impl Fn(Event)) {
         }
     };
     let offline = || "the mouse isn't connected right now".to_string();
+    let mut watch_dpi = false;
+    let mut last_dpi_poll = Instant::now();
+    let mut last_dpi: Option<(u8, u8, Option<u16>)> = None;
 
     loop {
         // Commands from the tray.
@@ -562,6 +593,10 @@ pub fn run(rx: Receiver<Cmd>, mut light: Light, emit: impl Fn(Event)) {
                     if let Some(s) = session.as_mut().filter(|s| s.online) {
                         emit(Event::Onboard(s.read_onboard()));
                     }
+                }
+                Cmd::WatchDpi(on) => {
+                    watch_dpi = on;
+                    last_dpi = None; // re-send current state to the new viewer
                 }
                 Cmd::Restore(sectors) => {
                     let r = match session.as_mut().filter(|s| s.online) {
@@ -661,6 +696,17 @@ pub fn run(rx: Receiver<Cmd>, mut light: Light, emit: impl Fn(Event)) {
             }
             if !s.online {
                 s.link.index = 1;
+            }
+        }
+
+        // Live DPI readout: cheap (two short requests) and only while watched.
+        if watch_dpi && s.online && s.obp.is_some() && last_dpi_poll.elapsed() >= Duration::from_millis(350) {
+            last_dpi_poll = Instant::now();
+            if let Ok(st) = s.dpi_state() {
+                if last_dpi != Some(st) {
+                    last_dpi = Some(st);
+                    emit(Event::Dpi { profile: st.0, index: st.1, dpi: st.2 });
+                }
             }
         }
 

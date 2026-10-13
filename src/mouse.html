@@ -42,6 +42,11 @@
   input[type=number], select, .keycap { font: inherit; font-size: 12px; color: var(--text); background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px; width: 100%; }
   input[type=radio] { accent-color: var(--accent); width: 15px; height: 15px; }
   .pill { font-size: 11px; padding: 1px 7px; border-radius: 99px; }
+  .dpi .n.live { color: var(--accent); font-weight: 700; }
+  .dpi .n.live::after { content: " ●"; animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .dpi input[type=number].live { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .nowdpi { font-size: 12px; padding: 2px 9px; border-radius: 99px; }
   .pill.def { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
   .pill.sh { background: color-mix(in srgb, #f97316 18%, transparent); color: #f97316; }
 
@@ -75,6 +80,7 @@
 <body>
   <div class="top">
     <h1>Mouse settings</h1>
+    <span class="nowdpi grad hidden" id="nowdpi"></span>
     <span class="sub" id="dev"></span>
   </div>
 
@@ -141,7 +147,7 @@
   const $ = id => document.getElementById(id);
   const send = (cmd, extra) => window.ipc.postMessage(JSON.stringify(Object.assign({ cmd }, extra || {})));
   const clone = x => JSON.parse(JSON.stringify(x));
-  let data = null, edit = null, sel = 1, recording = null;
+  let data = null, edit = null, sel = 1, recording = null, live = null;
 
   // ---------- action vocabulary ----------
   const SPECIAL = { 1: 'Tilt left', 2: 'Tilt right', 3: 'DPI up', 4: 'DPI down', 5: 'DPI cycle', 6: 'DPI default', 7: 'DPI shift (sniper)',
@@ -262,11 +268,15 @@
 
     const dpi = $('dpi'); dpi.replaceChildren();
     ['#', 'Level', 'DPI', 'Default', 'Sniper'].forEach(h => { const e = document.createElement('div'); e.className = 'h'; e.textContent = h; dpi.append(e); });
+    const liveHere = live && live.profile === p.slot;
     p.dpi.forEach((v, i) => {
-      const n = document.createElement('div'); n.className = 'n'; n.textContent = i + 1;
+      const isLive = liveHere && live.index === i;
+      const n = document.createElement('div'); n.className = 'n' + (isLive ? ' live' : ''); n.textContent = i + 1;
+      n.title = isLive ? 'The mouse is on this level right now' : '';
       const r = document.createElement('input'); r.type = 'range'; r.min = 100; r.max = 25600; r.step = 50; r.value = v;
       const setv = x => r.style.setProperty('--v', ((x - 100) / 25500 * 100) + '%'); setv(v);
       const num = document.createElement('input'); num.type = 'number'; num.min = 100; num.max = 25600; num.step = 50; num.value = v;
+      if (isLive) num.classList.add('live');
       r.oninput = () => { num.value = r.value; setv(r.value); };
       r.onchange = () => { p.dpi[i] = +r.value; changed(); };
       num.onchange = () => { let x = Math.round(Math.min(25600, Math.max(100, +num.value || 100)) / 50) * 50; p.dpi[i] = x; changed(); };
@@ -343,6 +353,22 @@
       row.append(go); el.append(row);
     });
     $('modal').classList.remove('hidden');
+  };
+  window.dpi = d => {
+    const followed = live && live.profile === sel;
+    const profileChanged = !live || live.profile !== d.profile;
+    live = d;
+    $('nowdpi').textContent = d.dpi ? `Now: ${d.dpi} DPI · profile ${d.profile}` : `Now: level ${d.index + 1} · profile ${d.profile}`;
+    $('nowdpi').classList.remove('hidden');
+    // Follow profile switches made with the mouse's profile button (unless editing elsewhere).
+    if (edit && profileChanged) {
+      // The mouse's own profile button: the Active badge always follows;
+      // the open tab follows too unless you're mid-edit on another profile.
+      data.active = edit.active = d.profile;
+      if (followed || !dirty() || sel === d.profile) sel = d.profile;
+      setMsg(`Mouse switched to profile ${d.profile}.`);
+    }
+    if (edit && !recording && !document.activeElement?.matches('input[type=number]')) render();
   };
   window.accent = c => document.documentElement.style.setProperty('--accent', c);
   document.addEventListener('contextmenu', e => e.preventDefault());

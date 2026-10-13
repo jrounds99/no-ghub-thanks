@@ -123,7 +123,14 @@ fn click_totals(stats: &clicks::Stats) -> (u64, u64) {
     (t, total)
 }
 
-fn ui_state(cfg: &Config, status: Option<&Status>, lamparray: bool, stats: &clicks::Stats, upd: &UpdateState) -> String {
+fn ui_state(
+    cfg: &Config,
+    status: Option<&Status>,
+    lamparray: bool,
+    stats: &clicks::Stats,
+    upd: &UpdateState,
+    live: Option<(u8, Option<u16>)>,
+) -> String {
     let (today, total) = click_totals(stats);
     let saver_active = cfg.lighting_enabled
         && cfg.lights_off_below > 0
@@ -151,6 +158,8 @@ fn ui_state(cfg: &Config, status: Option<&Status>, lamparray: bool, stats: &clic
         "pin": cfg.always_show_in_tray,
         "auto_update": cfg.auto_update,
         "tray_icon": cfg.tray_icon,
+        "dpi": live.and_then(|l| l.1),
+        "live_profile": live.map(|l| l.0),
         "update": {
             "current": updater::VERSION,
             "build": updater::build_short(),
@@ -427,6 +436,9 @@ fn main() {
     // from the tray menu), so only auto-hide once the panel really had focus.
     let mut shown_at = Instant::now();
     let mut got_focus = false;
+    // Live DPI readout runs only while the panel or Mouse settings is open.
+    let mut watching_dpi = false;
+    let mut live: Option<(u8, Option<u16>)> = None; // (profile, dpi)
     let mut last_tick = Instant::now();
     let mut stats_dirty = false;
     let mut last_stats_save = Instant::now();
@@ -600,6 +612,18 @@ fn main() {
                         Ok(d) => format!("onboard({})", serde_json::json!({ "ok": true, "data": d })),
                         Err(e) => format!("onboard({})", serde_json::json!({ "ok": false, "error": e })),
                     };
+                    let _ = wv.evaluate_script(&js);
+                }
+            }
+
+            Event::UserEvent(UserEvent::Device(device::Event::Dpi { profile, index, dpi })) => {
+                live = Some((profile, dpi));
+                refresh_ui = window.is_visible();
+                if let (Some((_, wv)), true) = (&mouse_win, mouse_ready) {
+                    let js = format!(
+                        "dpi({})",
+                        serde_json::json!({ "profile": profile, "index": index, "dpi": dpi })
+                    );
                     let _ = wv.evaluate_script(&js);
                 }
             }
@@ -993,6 +1017,14 @@ fn main() {
         if apply {
             let _ = tx.send(Cmd::Apply(light_of(&cfg)));
         }
+        let want_dpi = window.is_visible() || (mouse_win.is_some() && mouse_ready);
+        if want_dpi != watching_dpi {
+            watching_dpi = want_dpi;
+            let _ = tx.send(Cmd::WatchDpi(want_dpi));
+            if !want_dpi {
+                live = None;
+            }
+        }
         if refresh_icon {
             if let Some(t) = &tray {
                 let _ = t.set_icon(tray_image(&cfg, status.as_ref(), light_taskbar));
@@ -1000,7 +1032,7 @@ fn main() {
             }
         }
         if refresh_ui && ui_ready {
-            let js = format!("render({})", ui_state(&cfg, status.as_ref(), lamparray, &stats, &upd));
+            let js = format!("render({})", ui_state(&cfg, status.as_ref(), lamparray, &stats, &upd, live));
             let _ = webview.evaluate_script(&js);
         }
         if refresh_stats && stats_ready {
