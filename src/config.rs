@@ -35,6 +35,9 @@ fn default_color() -> String {
 fn default_period() -> u16 {
     3000
 }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -49,6 +52,15 @@ pub struct Config {
     /// Count mouse clicks for the stats page (local only).
     #[serde(default)]
     pub count_clicks: bool,
+    /// Battery saver: lighting off at or below this % while discharging (0 = never).
+    #[serde(default)]
+    pub lights_off_below: u8,
+    /// Keep the icon in the visible part of the tray (Windows 11 per-app setting).
+    #[serde(default = "default_true")]
+    pub always_show_in_tray: bool,
+    /// Install new builds without asking (otherwise: notification + button).
+    #[serde(default)]
+    pub auto_update: bool,
     pub profiles: Vec<Profile>,
 }
 
@@ -66,6 +78,9 @@ impl Default for Config {
             brightness: 100,
             low_battery_alert: 15,
             count_clicks: false,
+            lights_off_below: 0,
+            always_show_in_tray: true,
+            auto_update: false,
             profiles: vec![
                 p("White", Effect::Static, "#FFFFFF", 3000),
                 p("Red", Effect::Static, "#FF0000", 3000),
@@ -114,6 +129,21 @@ impl Config {
         if let Ok(s) = serde_json::to_string_pretty(self) {
             let _ = std::fs::write(Self::path(), s);
         }
+    }
+
+    /// Index of the active profile (falls back to the first).
+    pub fn active_index(&self) -> usize {
+        self.profiles.iter().position(|p| p.name == self.active_profile).unwrap_or(0)
+    }
+
+    /// A profile name not already taken, based on `base`.
+    pub fn unique_name(&self, base: &str) -> String {
+        let base = base.trim();
+        let base = if base.is_empty() { "Custom" } else { base };
+        if !self.profiles.iter().any(|p| p.name == base) {
+            return base.to_string();
+        }
+        (2..).map(|n| format!("{base} {n}")).find(|n| !self.profiles.iter().any(|p| &p.name == n)).unwrap()
     }
 
     pub fn active(&self) -> Profile {

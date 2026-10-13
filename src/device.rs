@@ -14,6 +14,8 @@ pub struct Light {
     pub enabled: bool,
     pub profile: Profile,
     pub brightness: u8,
+    /// Battery saver: LEDs off at or below this % while discharging (0 = never).
+    pub off_below: u8,
 }
 
 pub enum Cmd {
@@ -55,7 +57,10 @@ struct Session {
     full: bool,
     last_battery: Instant,
     last_ping: Instant,
-    applied_bucket: Option<u8>,
+    /// What the lights were last set for: (battery bucket, battery-saver active).
+    applied_sig: Option<(Option<u8>, bool)>,
+    /// LED pipeline already claimed from firmware on this connection.
+    claimed: bool,
 }
 
 impl Session {
@@ -127,10 +132,13 @@ impl Session {
         let Some(rgb) = self.rgb else { return Ok(()) };
         // Back to onboard mode so DPI/buttons come from the mouse's own profile,
         // then take the LED pipeline from firmware.
-        if let Some(o) = self.obp {
-            let _ = self.link.request(o, 1, &[0x01]);
+        if !self.claimed {
+            if let Some(o) = self.obp {
+                let _ = self.link.request(o, 1, &[0x01]);
+            }
+            self.link.request(rgb, 5, &[0x01, 0x03, 0x04])?;
+            self.claimed = true;
         }
-        self.link.request(rgb, 5, &[0x01, 0x03, 0x04])?;
 
         let (id, params) = self.effect_params(light);
         let idx = self
@@ -144,13 +152,33 @@ impl Session {
         payload[2..12].copy_from_slice(&params);
         payload[12] = 0x01;
         self.link.request(rgb, 1, &payload)?;
-        self.applied_bucket = battery_bucket(self.percent, self.charging);
+        self.applied_sig = Some(self.sig(light));
         Ok(())
+    }
+
+    /// Battery saver currently forcing the lights off?
+    fn saver_active(&self, light: &Light) -> bool {
+        light.off_below > 0 && !self.charging && self.percent.is_some_and(|p| p <= light.off_below)
+    }
+
+    /// The battery-dependent inputs to the lighting decision.
+    fn sig(&self, light: &Light) -> (Option<u8>, bool) {
+        let bucket = if light.profile.effect == Effect::Battery {
+            battery_bucket(self.percent, self.charging)
+        } else {
+            None
+        };
+        (bucket, self.saver_active(light))
+    }
+
+    /// Battery changed in a way that changes what the LEDs should show?
+    fn needs_reapply(&self, light: &Light) -> bool {
+        light.enabled && self.rgb.is_some() && self.applied_sig != Some(self.sig(light))
     }
 
     fn effect_params(&self, light: &Light) -> (u16, [u8; 10]) {
         let mut p = [0u8; 10];
-        if !light.enabled || light.profile.effect == Effect::Off {
+        if !light.enabled || light.profile.effect == Effect::Off || self.saver_active(light) {
             return (FX_DISABLED, p);
         }
         let scale = |c: u8| ((c as u16 * light.brightness as u16) / 100) as u8;
@@ -197,6 +225,7 @@ impl Session {
 
     /// Device came (back) online: rediscover, enforce lighting, read battery.
     fn bring_online(&mut self, light: &Light) -> hidpp::Result<()> {
+        self.claimed = false;
         self.discover()?;
         self.read_battery()?;
         self.apply(light)?;
@@ -275,7 +304,8 @@ fn new_session(link: Link) -> Session {
         full: false,
         last_battery: Instant::now(),
         last_ping: Instant::now(),
-        applied_bucket: None,
+        applied_sig: None,
+        claimed: false,
     }
 }
 
@@ -370,10 +400,7 @@ pub fn run(rx: Receiver<Cmd>, mut light: Light, emit: impl Fn(Option<Status>)) {
             // Battery change event (function 0, swid 0) from UNIFIED_BATTERY.
             if s.online && Some(n[2]) == s.bat && n[3] == 0x00 && n[1] == s.link.index {
                 s.set_battery(&n[4..]);
-                if light.enabled
-                    && light.profile.effect == Effect::Battery
-                    && s.applied_bucket != battery_bucket(s.percent, s.charging)
-                {
+                if s.needs_reapply(&light) {
                     let _ = s.apply(&light);
                 }
             }
@@ -382,10 +409,7 @@ pub fn run(rx: Receiver<Cmd>, mut light: Light, emit: impl Fn(Option<Status>)) {
         if s.online {
             if s.last_battery.elapsed() >= BATTERY_POLL && s.read_battery().is_err() {
                 s.online = false;
-            } else if light.enabled
-                && light.profile.effect == Effect::Battery
-                && s.applied_bucket != battery_bucket(s.percent, s.charging)
-            {
+            } else if s.needs_reapply(&light) {
                 let _ = s.apply(&light);
             }
         } else if !s.link.wired && s.last_ping.elapsed() >= OFFLINE_PING {

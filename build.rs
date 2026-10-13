@@ -17,6 +17,21 @@ fn main() {
         .unwrap_or_else(|| DEFAULT_NAME.to_string());
     println!("cargo:rustc-env=APP_DISPLAY_NAME={name}");
 
+    // Commit this exe was built from; the updater compares it to the release.
+    println!("cargo:rerun-if-env-changed=GITHUB_SHA");
+    let sha = std::env::var("GITHUB_SHA")
+        .ok()
+        .or_else(|| {
+            std::process::Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        })
+        .unwrap_or_else(|| "dev".into());
+    println!("cargo:rustc-env=BUILD_SHA={sha}");
+
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let mut res = winresource::WindowsResource::new();
         res.set_icon("assets/app.ico")

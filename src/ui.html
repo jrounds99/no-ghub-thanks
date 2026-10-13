@@ -95,6 +95,43 @@
   .links a:hover { color: var(--text); }
   .statlink { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
               background: linear-gradient(90deg, var(--accent), #ec4899); -webkit-background-clip: text; color: transparent; }
+
+  .switch.sm { width: 32px; height: 16px; }
+  .switch.sm span::after { top: 2px; left: 2px; width: 10px; height: 10px; }
+  .switch.sm input:checked + span::after { left: 18px; }
+
+  details.custom { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+  details.custom summary { cursor: pointer; color: var(--muted); font-size: 12px; list-style: none; display: flex; align-items: center; gap: 6px; }
+  details.custom summary::before { content: "›"; display: inline-block; transition: transform .15s; font-size: 14px; }
+  details.custom[open] summary::before { transform: rotate(90deg); }
+  .seg { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; background: var(--chip); border: 1px solid var(--line);
+         border-radius: 8px; padding: 3px; margin-top: 8px; }
+  .seg button { border: 0; background: none; color: var(--muted); font: inherit; font-size: 11.5px; padding: 5px 0; border-radius: 6px; cursor: pointer; }
+  .seg button.on { color: #fff; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #8b5cf6)); }
+  .field { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .field > span:first-child { width: 52px; color: var(--muted); font-size: 12px; flex: none; }
+  input[type=color] { -webkit-appearance: none; width: 34px; height: 24px; border: 1px solid var(--line); border-radius: 6px; padding: 0; background: none; cursor: pointer; }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+  input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
+  .presets { display: flex; gap: 5px; flex-wrap: wrap; }
+  .presets i { width: 18px; height: 18px; border-radius: 50%; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+  .presets i:hover { transform: scale(1.12); }
+  .btns { display: flex; gap: 6px; margin-top: 12px; }
+  .btn { flex: 1; border: 1px solid var(--line); background: var(--chip); color: var(--text); font: inherit; font-size: 12px;
+         padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  .btn:hover { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+  .btn.primary { color: #fff; border-color: transparent; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #8b5cf6)); }
+  .btn.danger:hover { border-color: #e5484d; color: #e5484d; }
+  select { font: inherit; font-size: 12px; color: var(--text); background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+  .set { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
+  .set + .set { border-top: 1px solid var(--line); }
+  .set .sub { margin-top: 1px; }
+  .update { margin-top: 10px; padding: 10px 12px; border-radius: 8px; display: flex; align-items: center; gap: 10px; color: #fff;
+            background: linear-gradient(120deg, #10b981, #06b6d4); }
+  .update div { flex: 1; font-size: 12px; }
+  .update .btn { flex: none; background: rgba(255,255,255,.2); color: #fff; border-color: rgba(255,255,255,.35); }
+  .ver { color: var(--muted); font-size: 11.5px; }
+  .ver a { color: var(--muted); cursor: pointer; text-decoration: underline; }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -108,6 +145,11 @@
     <div class="bar" id="bar"><i id="fill" style="width:0"></i></div>
   </div>
 
+  <div class="update hidden" id="upd">
+    <div id="updtext">Update available</div>
+    <button class="btn" id="updbtn">Update now</button>
+  </div>
+
   <div class="card" id="lighting">
     <div class="row">
       <div><div class="label">Lighting</div><div class="sub" id="lsub">Off on every connect</div></div>
@@ -115,6 +157,17 @@
     </div>
     <div class="chips" id="chips"></div>
     <div class="slider"><span class="sub">☀</span><input type="range" id="bright" min="10" max="100" step="5"><span class="sub" id="bval"></span></div>
+
+    <details class="custom" id="custom">
+      <summary>Customize “<span id="cname"></span>”</summary>
+      <div class="seg" id="seg">
+        <button data-fx="off">Off</button><button data-fx="static">Static</button><button data-fx="breathe">Pulse</button><button data-fx="cycle">Cycle</button><button data-fx="battery">Battery</button>
+      </div>
+      <div class="field" id="f-color"><span>Color</span><input type="color" id="color">
+        <div class="presets" id="presets"></div></div>
+      <div class="field" id="f-speed"><span>Speed</span><input type="range" id="speed" min="500" max="10000" step="250"><span class="sub" id="sval"></span></div>
+      <div class="btns"><button class="btn primary" id="saveas">Save as new profile</button><button class="btn danger" id="del">Delete</button></div>
+    </details>
   </div>
 
   <div class="warn hidden" id="warn">
@@ -130,21 +183,47 @@
     <a class="statlink" id="stats">Click stats ›</a>
   </div>
 
+  <div class="card">
+    <div class="set"><div><div>Battery saver</div><div class="sub">Lighting off below</div></div>
+      <select id="saver"><option value="0">Never</option><option>10</option><option>15</option><option>20</option><option>30</option><option>50</option></select></div>
+    <div class="set"><div><div>Low battery alert</div><div class="sub">Notify at</div></div>
+      <select id="alert"><option value="0">Never</option><option>5</option><option>10</option><option>15</option><option>20</option><option>25</option></select></div>
+    <div class="set"><div>Start with Windows</div><label class="switch sm"><input type="checkbox" id="auto"><span></span></label></div>
+    <div class="set"><div><div>Always show in tray</div><div class="sub">Keep the icon out of the overflow menu</div></div><label class="switch sm"><input type="checkbox" id="pin"><span></span></label></div>
+    <div class="set"><div><div>Install updates automatically</div><div class="sub">Otherwise you get a notification</div></div><label class="switch sm"><input type="checkbox" id="autoupd"><span></span></label></div>
+  </div>
+
   <div class="foot">
-    <label><span class="switch" style="width:32px;height:16px"><input type="checkbox" id="auto"><span></span></span>Start with Windows</label>
-    <div class="links"><a id="edit">Edit profiles</a><a id="quit">Quit</a></div>
+    <div class="ver"><span id="ver"></span> · <a id="check">Check for updates</a></div>
+    <div class="links"><a id="edit">Edit file</a><a id="quit">Quit</a></div>
   </div>
 
 <script>
   const $ = id => document.getElementById(id);
   const send = (cmd, extra) => window.ipc.postMessage(JSON.stringify(Object.assign({ cmd }, extra || {})));
-  let state = null;
+  const PRESETS = ['#ffffff', '#ff0000', '#ff6a00', '#ffcc00', '#00ff40', '#00e5ff', '#0040ff', '#8b00ff', '#ff00aa'];
+  let state = null, editing = false;
 
   function swatch(p) {
     const el = document.createElement('i');
     el.className = 'sw ' + p.effect;
     if (p.effect === 'static' || p.effect === 'breathe') el.style.background = p.color;
     return el;
+  }
+
+  // Throttle live edits to ~12/s so dragging the color picker stays smooth.
+  let pending = null, timer = null;
+  function edit(fields, commit) {
+    pending = Object.assign(pending || {}, fields);
+    const flush = () => { timer = null; if (pending) { send('edit', Object.assign(pending, { commit: !!commit })); pending = null; } };
+    if (commit) { clearTimeout(timer); flush(); }
+    else if (!timer) timer = setTimeout(flush, 80);
+  }
+
+  function showFields(fx) {
+    $('f-color').classList.toggle('hidden', !(fx === 'static' || fx === 'breathe'));
+    $('f-speed').classList.toggle('hidden', !(fx === 'breathe' || fx === 'cycle'));
+    document.querySelectorAll('#seg button').forEach(b => b.classList.toggle('on', b.dataset.fx === fx));
   }
 
   window.render = s => {
@@ -157,13 +236,12 @@
     const p = (s.online && s.percent != null) ? s.percent : null;
     $('pct').innerHTML = (p == null ? '--' : p) + '<small>%</small>';
     $('fill').style.width = (p || 0) + '%';
-    // Keep the gradient anchored to the full bar width so the color reflects the level.
     $('fill').style.backgroundSize = s.charging ? '' : (p ? (100 / p * 100) : 100) + '% 100%';
     $('bar').classList.toggle('charging', !!s.charging);
 
     $('enabled').checked = s.enabled;
     $('lighting').classList.toggle('dim', !s.enabled);
-    $('lsub').textContent = s.enabled ? s.active : 'Off on every connect';
+    $('lsub').textContent = !s.enabled ? 'Off on every connect' : s.saver_active ? `Battery saver: off below ${s.off_below}%` : s.active;
 
     const chips = $('chips');
     chips.replaceChildren(...s.profiles.map(p => {
@@ -176,27 +254,73 @@
       return c;
     }));
 
+    // Customize panel mirrors the active profile (unless the user is mid-drag).
+    const a = s.profiles.find(p => p.name === s.active) || s.profiles[0];
+    $('cname').textContent = a.name;
+    if (!editing) {
+      showFields(a.effect);
+      $('color').value = a.color.toLowerCase();
+      $('speed').value = a.period_ms;
+      $('sval').textContent = (a.period_ms / 1000).toFixed(1) + 's';
+    }
+    $('del').disabled = s.profiles.length <= 1;
+
     $('bright').value = s.brightness;
     $('bright').style.setProperty('--v', ((s.brightness - 10) / 90 * 100) + '%');
     $('bval').textContent = s.brightness + '%';
     $('auto').checked = s.autostart;
+    $('pin').checked = s.pin;
+    $('autoupd').checked = s.auto_update;
+    $('saver').value = String(s.off_below);
+    $('alert').value = String(s.low_alert);
+    $('warn').classList.toggle('hidden', !s.lamparray);
+
     $('clicks').checked = s.clicks.enabled;
     const n = v => v >= 1e4 ? (v / 1e3).toFixed(v >= 1e5 ? 0 : 1) + 'k' : v.toLocaleString();
     $('csub').textContent = s.clicks.enabled ? `Today ${n(s.clicks.today)} · All time ${n(s.clicks.total)}` : 'Off';
-    $('warn').classList.toggle('hidden', !s.lamparray);
+
+    const u = s.update;
+    $('ver').textContent = 'Build ' + u.current;
+    $('check').textContent = { checking: 'Checking…', uptodate: 'Up to date ✓', error: 'Check failed, retry' }[u.status] || 'Check for updates';
+    $('check').title = u.error || '';
+    $('upd').classList.toggle('hidden', !(u.status === 'available' || u.status === 'installing'));
+    $('updtext').textContent = u.status === 'installing' ? 'Installing update…' : `New build ${u.latest} is available`;
+    $('updbtn').disabled = u.status === 'installing';
+
     send('height', { value: Math.ceil(document.body.scrollHeight) });
   };
 
   $('enabled').onchange = e => send('toggle', { on: e.target.checked });
   $('auto').onchange = e => send('autostart', { on: e.target.checked });
+  $('pin').onchange = e => send('pin', { on: e.target.checked });
+  $('autoupd').onchange = e => send('auto_update', { on: e.target.checked });
+  $('saver').onchange = e => send('off_below', { value: +e.target.value });
+  $('alert').onchange = e => send('low_alert', { value: +e.target.value });
   $('bright').oninput = e => {
     e.target.style.setProperty('--v', ((e.target.value - 10) / 90 * 100) + '%');
     $('bval').textContent = e.target.value + '%';
   };
   $('bright').onchange = e => send('brightness', { value: +e.target.value });
-  $('edit').onclick = () => send('edit');
+
+  document.querySelectorAll('#seg button').forEach(b => b.onclick = () => { showFields(b.dataset.fx); edit({ effect: b.dataset.fx }, true); });
+  $('color').oninput = e => { editing = true; edit({ color: e.target.value }); };
+  $('color').onchange = e => { editing = false; edit({ color: e.target.value }, true); };
+  $('speed').oninput = e => { editing = true; $('sval').textContent = (e.target.value / 1000).toFixed(1) + 's'; edit({ period: +e.target.value }); };
+  $('speed').onchange = e => { editing = false; edit({ period: +e.target.value }, true); };
+  $('presets').replaceChildren(...PRESETS.map(c => { const i = document.createElement('i'); i.style.background = c; i.title = c;
+    i.onclick = () => { $('color').value = c; edit({ color: c }, true); }; return i; }));
+  $('saveas').onclick = () => {
+    const name = prompt('Name for the new profile:', 'My lighting');
+    if (name && name.trim()) send('new_profile', { name: name.trim() });
+  };
+  $('del').onclick = () => { if (confirm(`Delete profile "${$('cname').textContent}"?`)) send('delete_profile'); };
+  $('custom').ontoggle = () => send('height', { value: Math.ceil(document.body.scrollHeight) });
+
   $('clicks').onchange = e => send('clicks', { on: e.target.checked });
   $('stats').onclick = () => send('stats');
+  $('check').onclick = () => send('check_update');
+  $('updbtn').onclick = () => send('install_update');
+  $('edit').onclick = () => send('open_file');
   $('quit').onclick = () => send('quit');
   $('fix').onclick = () => { navigator.clipboard.writeText(state.fix); $('fix').textContent = 'Copied — paste into PowerShell'; };
   document.addEventListener('keydown', e => { if (e.key === 'Escape') send('hide'); });

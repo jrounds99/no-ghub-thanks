@@ -91,14 +91,46 @@ mod imp {
         }
     }
 
+    /// Windows 11 keeps each tray icon's "show in taskbar" toggle under
+    /// HKCU\Control Panel\NotifyIconSettings\<id> (ExecutablePath, IsPromoted).
+    /// The entry appears after the icon has been shown once. Returns whether
+    /// a matching entry was found.
+    pub fn set_tray_promoted(on: bool) -> bool {
+        use winreg::enums::KEY_ALL_ACCESS;
+        let Ok(exe) = std::env::current_exe() else { return false };
+        let Some(file) = exe.file_name().map(|f| f.to_string_lossy().to_lowercase()) else { return false };
+        let Ok(root) = RegKey::predef(HKEY_CURRENT_USER).open_subkey(r"Control Panel\NotifyIconSettings") else {
+            return false;
+        };
+        let mut found = false;
+        for name in root.enum_keys().flatten() {
+            let Ok(k) = root.open_subkey_with_flags(&name, KEY_ALL_ACCESS) else { continue };
+            let path: String = k.get_value("ExecutablePath").unwrap_or_default();
+            if path.to_lowercase().ends_with(&file) {
+                let _ = k.set_value("IsPromoted", &(on as u32));
+                found = true;
+            }
+        }
+        found
+    }
+
     /// Returns false if another instance already holds the mutex.
     pub fn single_instance() -> bool {
-        use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
+        use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError};
         use windows_sys::Win32::System::Threading::CreateMutexW;
         let name: Vec<u16> = "Local\\NoGHubThanks\0".encode_utf16().collect();
         unsafe {
             let h = CreateMutexW(std::ptr::null(), 1, name.as_ptr());
-            !h.is_null() && GetLastError() != ERROR_ALREADY_EXISTS
+            if h.is_null() {
+                return false;
+            }
+            if GetLastError() == ERROR_ALREADY_EXISTS {
+                // Don't keep the other instance's mutex alive (matters when
+                // waiting for the old exe to exit after an update).
+                CloseHandle(h);
+                return false;
+            }
+            true // handle intentionally held for the process lifetime
         }
     }
 }
@@ -131,6 +163,9 @@ mod imp {
     pub fn round_corners(_hwnd: isize) {}
     pub fn single_instance() -> bool {
         true
+    }
+    pub fn set_tray_promoted(_on: bool) -> bool {
+        false
     }
 }
 

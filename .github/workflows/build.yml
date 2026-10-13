@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # Doc-only changes don't produce a new build (and don't trigger updates).
+    paths-ignore: ["**.md", "LICENSE", "assets/app.png"]
   pull_request:
   workflow_dispatch:
     inputs:

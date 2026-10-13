@@ -18,6 +18,10 @@ What you get:
 - **Click counter** (optional, off by default) with a stats page: all-time odometer, daily / weekly / monthly charts, averages, best day, streaks, per-button split, time-of-day and some deeply unnecessary facts.
 
 - **A clean panel** (left-click the tray icon) that follows your Windows light/dark mode and accent color.
+- **Color and effect picker** with live preview on the mouse; save your own lighting profiles.
+- **Battery saver**: turn the lighting off below a battery level you choose.
+- **Always in the tray**: keeps the icon out of the overflow (^) menu.
+- **Updates**: checks this repo daily; one click (or fully automatic) to update, verified by SHA-256.
 
 What it deliberately doesn't do: macros, game detection, cloud profiles, firmware updates, or anything else that needs a resident service. Your DPI levels and button assignments stay as stored in the mouse's own onboard memory.
 
@@ -46,6 +50,20 @@ Windows 10/11 only (needs WebView2, which ships with Windows 11).
 - **Tray icon**: battery % with a level bar. Blue bar = charging. `--` = mouse asleep or not found. Hover for details.
 - **Panel** (left-click): battery, lighting switch, profile chips, brightness, Start with Windows. Follows your Windows light/dark mode and accent color.
 - **Lighting off** means off: it's re-applied every time the mouse connects or wakes, because the mouse falls back to its onboard lighting on every power cycle.
+
+## Settings (panel)
+
+| Setting | What it does |
+|---|---|
+| Battery saver | Lighting off at or below the chosen % while discharging; back on when charging. |
+| Low battery alert | Windows notification at the chosen %. |
+| Start with Windows | Launches straight to the tray at sign-in. |
+| Always show in tray | Sets Windows 11's per-app "show in taskbar" toggle for this app so the icon stays visible. Same switch as Settings → Personalization → Taskbar → Other system tray icons. |
+| Install updates automatically | Otherwise you get a notification and an **Update now** button. |
+
+## Updates
+
+The app checks this repo's rolling `latest` release once a day (and on **Check for updates**). Updating downloads the new exe with Windows' built-in `curl.exe`, verifies it against the release's `.sha256`, swaps it in place and restarts. Settings and click stats live in `%APPDATA%\no-ghub-thanks` and are untouched. Documentation-only commits don't produce a new build, so they never trigger an update.
 
 ## Click counter
 

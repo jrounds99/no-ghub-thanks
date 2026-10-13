@@ -8,6 +8,7 @@ mod device;
 mod hidpp;
 mod icon;
 mod platform;
+mod updater;
 
 use config::Config;
 use device::{Cmd, Light, Status};
@@ -31,6 +32,20 @@ enum UserEvent {
     Menu(MenuEvent),
     Ui(String),
     Stats(String),
+    Update(UpdateEv),
+}
+
+enum UpdateEv {
+    /// (result, user asked)
+    Checked(Result<Option<updater::Available>, String>, bool),
+    Installed(Result<(), String>),
+}
+
+struct UpdateState {
+    status: &'static str, // idle | checking | uptodate | available | installing | error
+    latest: Option<updater::Available>,
+    error: String,
+    notified: String,
 }
 
 #[derive(Deserialize)]
@@ -42,15 +57,31 @@ struct UiMsg {
     name: String,
     #[serde(default)]
     value: f64,
+    #[serde(default)]
+    effect: String,
+    #[serde(default)]
+    color: String,
+    #[serde(default)]
+    period: f64,
+    #[serde(default)]
+    commit: bool,
 }
 
 const WIDTH: f64 = 340.0;
 const TICK: Duration = Duration::from_secs(5);
 const STATS_SAVE: Duration = Duration::from_secs(60);
 const LAMPARRAY_CHECK: Duration = Duration::from_secs(60);
+const FIRST_UPDATE_CHECK: Duration = Duration::from_secs(60);
+const UPDATE_INTERVAL: Duration = Duration::from_secs(24 * 3600);
+const PIN_ATTEMPTS: u32 = 24; // ~2 minutes of 5 s ticks
 
 fn light_of(cfg: &Config) -> Light {
-    Light { enabled: cfg.lighting_enabled, profile: cfg.active(), brightness: cfg.brightness }
+    Light {
+        enabled: cfg.lighting_enabled,
+        profile: cfg.active(),
+        brightness: cfg.brightness,
+        off_below: cfg.lights_off_below,
+    }
 }
 
 fn config_mtime() -> Option<SystemTime> {
@@ -84,8 +115,11 @@ fn click_totals(stats: &clicks::Stats) -> (u64, u64) {
     (t, total)
 }
 
-fn ui_state(cfg: &Config, status: Option<&Status>, lamparray: bool, stats: &clicks::Stats) -> String {
+fn ui_state(cfg: &Config, status: Option<&Status>, lamparray: bool, stats: &clicks::Stats, upd: &UpdateState) -> String {
     let (today, total) = click_totals(stats);
+    let saver_active = cfg.lighting_enabled
+        && cfg.lights_off_below > 0
+        && status.is_some_and(|s| s.online && !s.charging && s.percent.is_some_and(|p| p <= cfg.lights_off_below));
     serde_json::json!({
         "found": status.is_some(),
         "name": status.map(|s| s.name.as_str()).unwrap_or(""),
@@ -103,6 +137,17 @@ fn ui_state(cfg: &Config, status: Option<&Status>, lamparray: bool, stats: &clic
         "accent": platform::accent_color(),
         "fix": platform::LAMPARRAY_FIX,
         "clicks": { "enabled": cfg.count_clicks, "today": today, "total": total },
+        "off_below": cfg.lights_off_below,
+        "saver_active": saver_active,
+        "low_alert": cfg.low_battery_alert,
+        "pin": cfg.always_show_in_tray,
+        "auto_update": cfg.auto_update,
+        "update": {
+            "current": updater::build_short(),
+            "status": upd.status,
+            "latest": upd.latest.as_ref().map(|a| a.sha.chars().take(7).collect::<String>()),
+            "error": upd.error,
+        },
     })
     .to_string()
 }
@@ -148,10 +193,36 @@ fn open_stats_window(
     Some((window, webview))
 }
 
+fn spawn_check(proxy: EventLoopProxy<UserEvent>, manual: bool) {
+    std::thread::spawn(move || {
+        let _ = proxy.send_event(UserEvent::Update(UpdateEv::Checked(updater::check(), manual)));
+    });
+}
+
+fn spawn_install(proxy: EventLoopProxy<UserEvent>, a: updater::Available) {
+    std::thread::spawn(move || {
+        let _ = proxy.send_event(UserEvent::Update(UpdateEv::Installed(updater::install(&a))));
+    });
+}
+
 fn main() {
-    if !platform::single_instance() {
+    // After a self-update the new exe starts while the old one is still
+    // shutting down: wait (briefly) for it to release the instance lock.
+    let after_update = std::env::args().any(|a| a == "--updated");
+    let mut first = platform::single_instance();
+    if !first && after_update {
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(250));
+            if platform::single_instance() {
+                first = true;
+                break;
+            }
+        }
+    }
+    if !first {
         return;
     }
+    updater::cleanup_old();
 
     let (mut cfg, cfg_error) = match Config::load() {
         Ok(c) => (c, None),
@@ -234,6 +305,12 @@ fn main() {
     ]);
 
     let stats_proxy = event_loop.create_proxy();
+    let upd_proxy = event_loop.create_proxy();
+    let mut upd = UpdateState { status: "idle", latest: None, error: String::new(), notified: String::new() };
+    let started = Instant::now();
+    let mut next_update_check = Instant::now() + FIRST_UPDATE_CHECK;
+    let mut pin_tries = if cfg.always_show_in_tray { PIN_ATTEMPTS } else { 0 };
+    let mut cleaned_old = false;
     let mut stats_win: Option<(Window, WebView)> = None;
     let mut stats_ready = false;
 
@@ -306,6 +383,22 @@ fn main() {
                 last_stats_save = Instant::now();
             }
 
+            // Keep the icon visible in the tray (entry appears once it's shown).
+            if pin_tries > 0 && tray.is_some() {
+                pin_tries -= 1;
+                if platform::set_tray_promoted(true) {
+                    pin_tries = 0;
+                }
+            }
+            if !cleaned_old && started.elapsed() > Duration::from_secs(15) {
+                cleaned_old = true;
+                updater::cleanup_old();
+            }
+            if Instant::now() >= next_update_check {
+                next_update_check = Instant::now() + UPDATE_INTERVAL;
+                spawn_check(upd_proxy.clone(), false);
+            }
+
             let lt = platform::taskbar_light();
             if lt != light_taskbar {
                 light_taskbar = lt;
@@ -355,6 +448,49 @@ fn main() {
                 if let Some(e) = &cfg_error {
                     platform::toast("config.json has an error — using defaults", e);
                 }
+                if after_update {
+                    platform::toast(APP_NAME, &format!("Updated to build {}", updater::build_short()));
+                }
+            }
+
+            Event::UserEvent(UserEvent::Update(ev)) => {
+                match ev {
+                    UpdateEv::Checked(Ok(None), _) => {
+                        upd.status = "uptodate";
+                        upd.latest = None;
+                        upd.error.clear();
+                    }
+                    UpdateEv::Checked(Ok(Some(a)), _) => {
+                        upd.error.clear();
+                        if cfg.auto_update {
+                            upd.status = "installing";
+                            spawn_install(upd_proxy.clone(), a.clone());
+                        } else {
+                            upd.status = "available";
+                            if upd.notified != a.sha {
+                                upd.notified = a.sha.clone();
+                                platform::toast(
+                                    "Update available",
+                                    &format!("Build {} is ready. Open the panel to install.", &a.sha[..7.min(a.sha.len())]),
+                                );
+                            }
+                        }
+                        upd.latest = Some(a);
+                    }
+                    UpdateEv::Checked(Err(e), manual) => {
+                        if manual {
+                            upd.status = "error";
+                        }
+                        upd.error = e;
+                    }
+                    UpdateEv::Installed(Ok(())) => quit = true,
+                    UpdateEv::Installed(Err(e)) => {
+                        upd.status = "error";
+                        platform::toast("Update failed", &e);
+                        upd.error = e;
+                    }
+                }
+                refresh_ui = true;
             }
 
             Event::UserEvent(UserEvent::Status(s)) => {
@@ -493,10 +629,90 @@ fn main() {
                                 w.set_focus();
                             }
                         }
-                        "edit" => {
+                        "open_file" => {
                             window.set_visible(false);
                             hidden_at = Instant::now();
                             platform::open_in_editor(&Config::path());
+                        }
+                        "edit" => {
+                            // Live edit of the active profile from the Customize section.
+                            let i = cfg.active_index();
+                            let p = &mut cfg.profiles[i];
+                            if !msg.effect.is_empty() {
+                                if let Ok(fx) = serde_json::from_value(serde_json::Value::String(msg.effect.clone())) {
+                                    p.effect = fx;
+                                }
+                            }
+                            if msg.color.len() == 7 && msg.color.starts_with('#') {
+                                p.color = msg.color.to_uppercase();
+                            }
+                            if msg.period > 0.0 {
+                                p.period_ms = (msg.period as u16).clamp(500, 10000);
+                            }
+                            cfg.lighting_enabled = true;
+                            light_i.set_checked(true);
+                            apply = true;
+                            if msg.commit {
+                                cfg.save();
+                                refresh_ui = true;
+                            }
+                        }
+                        "new_profile" => {
+                            let mut p = cfg.active();
+                            p.name = cfg.unique_name(&msg.name);
+                            cfg.active_profile = p.name.clone();
+                            cfg.profiles.push(p);
+                            cfg.save();
+                            refresh_ui = true;
+                        }
+                        "delete_profile" => {
+                            if cfg.profiles.len() > 1 {
+                                let i = cfg.active_index();
+                                cfg.profiles.remove(i);
+                                cfg.active_profile = cfg.profiles[i.min(cfg.profiles.len() - 1)].name.clone();
+                                cfg.save();
+                                apply = true;
+                                refresh_ui = true;
+                            }
+                        }
+                        "off_below" => {
+                            cfg.lights_off_below = (msg.value as u8).min(90);
+                            cfg.save();
+                            apply = true;
+                            refresh_ui = true;
+                        }
+                        "low_alert" => {
+                            cfg.low_battery_alert = (msg.value as u8).min(90);
+                            low_alerted = false;
+                            cfg.save();
+                        }
+                        "pin" => {
+                            cfg.always_show_in_tray = msg.on;
+                            cfg.save();
+                            if msg.on {
+                                pin_tries = PIN_ATTEMPTS;
+                            } else {
+                                pin_tries = 0;
+                                platform::set_tray_promoted(false);
+                            }
+                        }
+                        "auto_update" => {
+                            cfg.auto_update = msg.on;
+                            cfg.save();
+                        }
+                        "check_update" => {
+                            if upd.status != "checking" && upd.status != "installing" {
+                                upd.status = "checking";
+                                spawn_check(upd_proxy.clone(), true);
+                                refresh_ui = true;
+                            }
+                        }
+                        "install_update" => {
+                            if let (Some(a), false) = (upd.latest.clone(), upd.status == "installing") {
+                                upd.status = "installing";
+                                spawn_install(upd_proxy.clone(), a);
+                                refresh_ui = true;
+                            }
                         }
                         "hide" => {
                             window.set_visible(false);
@@ -565,7 +781,7 @@ fn main() {
             }
         }
         if refresh_ui && ui_ready {
-            let js = format!("render({})", ui_state(&cfg, status.as_ref(), lamparray, &stats));
+            let js = format!("render({})", ui_state(&cfg, status.as_ref(), lamparray, &stats, &upd));
             let _ = webview.evaluate_script(&js);
         }
         if refresh_stats && stats_ready {
